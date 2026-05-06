@@ -1,0 +1,68 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "coordinator-graph"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 22, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {
+        "nodes": {"mainStatUnit": "string", "secondaryStatUnit": "string"},
+        "edges": {"mainStatUnit": "string"}
+      },
+      "targets": [
+        {
+          "refId": "nodes",
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "coordinator-graph"},
+          "type": "json",
+          "source": "url",
+          "url": "/admin/api/peer-graph/nodes",
+          "url_options": {"method": "GET"},
+          "format": "nodeGraph-nodes",
+          "parser": "backend",
+          "root_selector": "",
+          "columns": [
+            {"selector": "id", "text": "id", "type": "string"},
+            {"selector": "title", "text": "title", "type": "string"},
+            {"selector": "subTitle", "text": "subTitle", "type": "string"},
+            {"selector": "mainStat", "text": "mainStat", "type": "string"},
+            {"selector": "secondaryStat", "text": "secondaryStat", "type": "string"},
+            {"selector": "color", "text": "color", "type": "string"}
+          ]
+        },
+        {
+          "refId": "edges",
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "coordinator-graph"},
+          "type": "json",
+          "source": "url",
+          "url": "/admin/api/peer-graph/edges",
+          "url_options": {"method": "GET"},
+          "format": "nodeGraph-edges",
+          "parser": "backend",
+          "root_selector": "",
+          "columns": [
+            {"selector": "id", "text": "id", "type": "string"},
+            {"selector": "source", "text": "source", "type": "string"},
+            {"selector": "target", "text": "target", "type": "string"},
+            {"selector": "mainStat", "text": "mainStat", "type": "string"}
+          ]
+        }
+      ],
+      "title": "NKN-mesh – nodes och peer-edges",
+      "type": "nodeGraph"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["nkn", "peer-graph"],
+  "templating": {"list": []},
+  "time": {"from": "now-15m", "to": "now"},
+  "timezone": "browser",
+  "title": "NKN-Monitor – peer-graf",
+  "uid": "nkn-peer-graph",
+  "version": 1
+}

@@ -14,12 +14,15 @@ import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 
+import httpx
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from ..config import CoordinatorConfig
+
+VM_URL = os.getenv("VICTORIAMETRICS_URL", "http://victoriametrics:8428")
 
 logger = logging.getLogger("nkn.admin")
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -147,6 +150,100 @@ def sweep_dead_probes(
     deleted = request.app.state.storage.delete_dead_probes(older_than_hours)
     logger.info("Sweep tog bort %d probes äldre än %d h", deleted, older_than_hours)
     return {"deleted": deleted, "older_than_hours": older_than_hours}
+
+
+@router.get("/api/peer-graph/nodes")
+def get_graph_nodes(
+    request: Request,
+    active_within_minutes: int = 5,
+    _: str = Depends(require_admin),
+) -> list[dict]:
+    """Nodes-format för Grafana Node Graph-panel.
+
+    Krav-fält: id, title. Optional: subTitle, mainStat, color.
+    Filtrerar bort probes som inte heartbeatat på active_within_minutes
+    så grafen inte överöses med spöken från tidigare körningar.
+    """
+    from datetime import timedelta
+    threshold = (datetime.now(timezone.utc) - timedelta(minutes=active_within_minutes)).isoformat()
+    probes = request.app.state.storage.list_probes()
+    nodes: list[dict] = []
+    for p in probes:
+        if not p.get("enabled", True):
+            continue
+        if p.get("last_classification") != "nkn":
+            continue
+        hb = p.get("last_heartbeat_at")
+        if not hb or hb < threshold:
+            continue
+        role = p.get("role", "probe")
+        ip = (p.get("last_local_ipv4") or [""])[0] or ""
+        nodes.append({
+            "id": p["id"],
+            "title": p.get("site_name") or p["id"][:8],
+            "subTitle": role,
+            "mainStat": ip,
+            "secondaryStat": p.get("hostname") or "",
+            "color": "blue" if role == "anchor" else "green",
+        })
+    return nodes
+
+
+@router.get("/api/peer-graph/edges")
+async def get_graph_edges(request: Request, _: str = Depends(require_admin)) -> list[dict]:
+    """Edges-format för Grafana Node Graph-panel.
+
+    Krav-fält: id, source, target. Hämtar senaste peer-RTT från VM och
+    mappar peer_site -> probe-id via SQLite.
+    """
+    storage = request.app.state.storage
+    probes = storage.list_probes()
+    # Mappning peer_site (-namn) -> probe-id
+    site_to_id: dict[str, str] = {}
+    for p in probes:
+        if p.get("site_name") and p.get("enabled", True):
+            site_to_id[p["site_name"]] = p["id"]
+
+    query = 'last_over_time(nkn_ping_rtt_ms{target_category="peer",peer_site!=""}[15m])'
+    try:
+        resp = await request.app.state.http.get(
+            f"{VM_URL}/api/v1/query", params={"query": query}, timeout=5.0
+        )
+        resp.raise_for_status()
+        result = resp.json().get("data", {}).get("result", [])
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.warning("Kunde inte hämta peer-edges från VM: %s", exc)
+        result = []
+
+    edges: dict[tuple[str, str], dict] = {}
+    for serie in result:
+        m = serie.get("metric", {})
+        source = m.get("client_id")
+        peer_site = m.get("peer_site")
+        if not source or not peer_site:
+            continue
+        target_id = site_to_id.get(peer_site)
+        if not target_id or target_id == source:
+            continue
+        try:
+            rtt = float(serie["value"][1])
+        except (KeyError, IndexError, TypeError, ValueError):
+            continue
+        key = (source, target_id)
+        existing = edges.get(key)
+        if existing is None or rtt < existing["_rtt"]:
+            edges[key] = {
+                "id": f"{source}-{target_id}",
+                "source": source,
+                "target": target_id,
+                "mainStat": f"{rtt:.0f} ms",
+                "_rtt": rtt,
+            }
+    out: list[dict] = []
+    for e in edges.values():
+        e.pop("_rtt", None)
+        out.append(e)
+    return out
 
 
 @router.post("/api/probes/{probe_id}/role")
