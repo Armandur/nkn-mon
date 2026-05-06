@@ -112,6 +112,7 @@ class MeasurementResult(BaseModel):
     site: str | None = None
     category: str = "builtin"
     peer_site: str | None = None
+    sender_local_ip: str | None = None
 
     # icmp_ping
     rtt_ms_min: float | None = None

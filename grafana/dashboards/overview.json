@@ -310,22 +310,25 @@
           "unit": "ms"
         },
         "overrides": [
-          {"matcher": {"id": "byName", "options": "site"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "auto"}}, {"id": "color", "value": {"mode": "fixed", "fixedColor": "text"}}, {"id": "unit", "value": "string"}, {"id": "custom.align", "value": "left"}]},
-          {"matcher": {"id": "byName", "options": "target"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "auto"}}, {"id": "color", "value": {"mode": "fixed", "fixedColor": "text"}}, {"id": "unit", "value": "string"}, {"id": "custom.align", "value": "left"}]}
+          {"matcher": {"id": "byName", "options": "Från"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "auto"}}, {"id": "color", "value": {"mode": "fixed", "fixedColor": "text"}}, {"id": "unit", "value": "string"}, {"id": "custom.align", "value": "left"}]},
+          {"matcher": {"id": "byName", "options": "Till"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "auto"}}, {"id": "color", "value": {"mode": "fixed", "fixedColor": "text"}}, {"id": "unit", "value": "string"}, {"id": "custom.align", "value": "left"}]},
+          {"matcher": {"id": "byName", "options": "Från-IP"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "auto"}}, {"id": "color", "value": {"mode": "fixed", "fixedColor": "text"}}, {"id": "unit", "value": "string"}, {"id": "custom.align", "value": "left"}]},
+          {"matcher": {"id": "byName", "options": "Till-IP"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "auto"}}, {"id": "color", "value": {"mode": "fixed", "fixedColor": "text"}}, {"id": "unit", "value": "string"}, {"id": "custom.align", "value": "left"}]}
         ]
       },
       "gridPos": {"h": 10, "w": 24, "x": 0, "y": 58},
       "id": 11,
       "options": {"showHeader": true, "sortBy": [{"displayName": "Senaste RTT", "desc": true}]},
       "targets": [
-        {"expr": "avg by (site, peer_site, target) (last_over_time(nkn_ping_rtt_ms{target_category=\"peer\",peer_site!=\"\"}[10m]))", "format": "table", "instant": true, "refId": "A"}
+        {"expr": "avg by (site, sender_local_ip, peer_site, target) (last_over_time(nkn_ping_rtt_ms{target_category=\"peer\",peer_site!=\"\"}[10m]))", "format": "table", "instant": true, "refId": "A"}
       ],
       "title": "Peer-mesh (senaste 10 min)",
       "type": "table",
       "transformations": [
         {"id": "organize", "options": {
           "excludeByName": {"Time": true},
-          "renameByName": {"Value": "Senaste RTT", "site": "Från", "peer_site": "Till", "target": "Peer-IP"}
+          "indexByName": {"site": 0, "sender_local_ip": 1, "peer_site": 2, "target": 3, "Value": 4},
+          "renameByName": {"Value": "Senaste RTT", "site": "Från", "sender_local_ip": "Från-IP", "peer_site": "Till", "target": "Till-IP"}
         }}
       ]
     }
@@ -339,6 +342,6 @@
   "timezone": "browser",
   "title": "NKN-Monitor – översikt",
   "uid": "nkn-overview",
-  "version": 6,
+  "version": 7,
   "weekStart": ""
 }

@@ -55,7 +55,7 @@ services:
       context: ./mock-client
     environment:
       COORDINATOR_URL: http://coordinator:8000
-      MOCK_PROBES: "5"
+      MOCK_PROBES: "15"
       MOCK_INTERVAL_SECONDS: "30"
       MOCK_SCENARIO: normal
       REGISTRATION_KEY: dev-registration-key

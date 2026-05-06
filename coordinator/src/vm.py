@@ -40,6 +40,9 @@ def _common_tags(client_id: str, r) -> dict[str, str]:
     peer_site = getattr(r, "peer_site", None)
     if peer_site:
         tags["peer_site"] = peer_site
+    sender_ip = getattr(r, "sender_local_ip", None)
+    if sender_ip:
+        tags["sender_local_ip"] = sender_ip
     return tags
 
 

@@ -73,6 +73,9 @@ Import-Module DnsClient -ErrorAction SilentlyContinue | Out-Null
 $BufferPath = Join-Path (Split-Path -Parent $ConfigPath) "buffer.jsonl"
 $BufferRetentionDays = 7
 
+# Cache av primär lokal IPv4. Uppdateras vid varje heartbeat.
+$Global:NknPrimaryLocalIp = $null
+
 function Write-NknLog {
     param([string]$Level, [string]$Message)
     $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -234,6 +237,10 @@ function New-NknResult {
         $Measurement.extra.PSObject.Properties["peer_site"]) {
         $peerSite = [string]$Measurement.extra.peer_site
     }
+    $senderIp = $null
+    if ($category -eq "peer") {
+        $senderIp = $Global:NknPrimaryLocalIp
+    }
     return [ordered]@{
         measurement_id = $Measurement.id
         timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
@@ -242,6 +249,7 @@ function New-NknResult {
         success = $false
         category = $category
         peer_site = $peerSite
+        sender_local_ip = $senderIp
     }
 }
 
@@ -570,6 +578,11 @@ function Send-Heartbeat {
 
     $netCtx = Get-NetworkContext -CanaryTargets $CanaryTargets
     $hostInfo = Get-HostInfo
+
+    # Cacha primär lokal IPv4 så peer-resultat kan tagga "från-IP"
+    if ($netCtx.local_ipv4 -and $netCtx.local_ipv4.Count -gt 0) {
+        $Global:NknPrimaryLocalIp = [string]$netCtx.local_ipv4[0]
+    }
 
     $payload = @{
         timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")

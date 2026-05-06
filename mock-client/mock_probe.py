@@ -189,6 +189,7 @@ async def run_probe(idx: int) -> None:
                     "site": meta["site"],
                     "category": category,
                     "peer_site": peer_site,
+                    "sender_local_ip": meta["local_ip"] if category == "peer" else None,
                 })
 
             if results:
