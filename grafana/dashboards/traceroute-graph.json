@@ -65,28 +65,11 @@
     "list": [
       {
         "name": "site",
-        "label": "Site",
-        "type": "query",
-        "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "coordinator-graph"},
-        "query": {
-          "type": "json",
-          "source": "url",
-          "url": "/admin/api/traceroute-graph/sites",
-          "url_options": {"method": "GET", "data": ""},
-          "format": "table",
-          "parser": "backend",
-          "root_selector": "",
-          "columns": [
-            {"selector": "site", "text": "__text", "type": "string"}
-          ]
-        },
-        "refresh": 1,
-        "includeAll": true,
-        "multi": true,
-        "allValue": "",
-        "current": {"selected": false, "text": "All", "value": "$__all"},
-        "sort": 1,
-        "options": []
+        "label": "Site (skriv namn, eller lämna tomt för alla)",
+        "type": "textbox",
+        "current": {"selected": false, "text": "", "value": ""},
+        "query": "",
+        "description": "Filtrera på site-namn. T.ex. 'Falun' matchar exakt. Tomt = visa alla."
       }
     ]
   },
@@ -94,5 +77,5 @@
   "timezone": "browser",
   "title": "NKN-Monitor – traceroute-graf",
   "uid": "nkn-traceroute-graph",
-  "version": 4
+  "version": 5
 }
