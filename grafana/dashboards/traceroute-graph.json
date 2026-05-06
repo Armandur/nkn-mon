@@ -77,7 +77,7 @@
           "parser": "backend",
           "root_selector": "",
           "columns": [
-            {"selector": "site", "text": "site", "type": "string"}
+            {"selector": "site", "text": "__text", "type": "string"}
           ]
         },
         "refresh": 2,
