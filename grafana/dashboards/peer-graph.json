@@ -33,9 +33,9 @@
           "fields": [
             {"jsonPath": "$[*].id", "name": "id", "type": "string"},
             {"jsonPath": "$[*].title", "name": "title", "type": "string"},
-            {"jsonPath": "$[*].subTitle", "name": "subTitle", "type": "string"},
-            {"jsonPath": "$[*].mainStat", "name": "mainStat", "type": "string"},
-            {"jsonPath": "$[*].secondaryStat", "name": "secondaryStat", "type": "string"},
+            {"jsonPath": "$[*].subtitle", "name": "subtitle", "type": "string"},
+            {"jsonPath": "$[*].mainstat", "name": "mainstat", "type": "string"},
+            {"jsonPath": "$[*].secondarystat", "name": "secondarystat", "type": "string"},
             {"jsonPath": "$[*].color", "name": "color", "type": "string"}
           ]
         },
@@ -48,7 +48,7 @@
             {"jsonPath": "$[*].id", "name": "id", "type": "string"},
             {"jsonPath": "$[*].source", "name": "source", "type": "string"},
             {"jsonPath": "$[*].target", "name": "target", "type": "string"},
-            {"jsonPath": "$[*].mainStat", "name": "mainStat", "type": "string"}
+            {"jsonPath": "$[*].mainstat", "name": "mainstat", "type": "string"}
           ]
         }
       ],
@@ -64,5 +64,5 @@
   "timezone": "browser",
   "title": "NKN-Monitor – peer-graf",
   "uid": "nkn-peer-graph",
-  "version": 3
+  "version": 4
 }

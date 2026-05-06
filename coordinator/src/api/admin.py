@@ -181,9 +181,9 @@ def get_graph_nodes(
         nodes.append({
             "id": p["id"],
             "title": p.get("site_name") or p["id"][:8],
-            "subTitle": role,
-            "mainStat": ip,
-            "secondaryStat": p.get("hostname") or "",
+            "subtitle": role,
+            "mainstat": ip,
+            "secondarystat": p.get("hostname") or "",
             "color": "blue" if role == "anchor" else "green",
         })
     return nodes
@@ -236,7 +236,7 @@ async def get_graph_edges(request: Request, _: str = Depends(require_admin)) -> 
                 "id": f"{source}-{target_id}",
                 "source": source,
                 "target": target_id,
-                "mainStat": f"{rtt:.0f} ms",
+                "mainstat": f"{rtt:.0f} ms",
                 "_rtt": rtt,
             }
     out: list[dict] = []
