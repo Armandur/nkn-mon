@@ -70,8 +70,8 @@ $CoordinatorUrl = $CoordinatorUrl.TrimEnd("/")
 # mätloopen inte beskattas av modulladdning (~1 sekund i kalla körningar).
 Import-Module DnsClient -ErrorAction SilentlyContinue | Out-Null
 
-$script:BufferPath = Join-Path (Split-Path -Parent $ConfigPath) "buffer.jsonl"
-$script:BufferRetentionDays = 7
+$BufferPath = Join-Path (Split-Path -Parent $ConfigPath) "buffer.jsonl"
+$BufferRetentionDays = 7
 
 function Write-NknLog {
     param([string]$Level, [string]$Message)
@@ -393,26 +393,31 @@ function Send-Results {
 }
 
 function Save-ResultsToBuffer {
-    param([object[]]$Results)
+    param([object[]]$Results, [string]$Path)
     if (-not $Results -or $Results.Count -eq 0) { return }
-    $dir = Split-Path -Parent $script:BufferPath
-    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
-    $lines = $Results | ForEach-Object { $_ | ConvertTo-Json -Depth 6 -Compress }
-    Add-Content -Path $script:BufferPath -Value $lines -Encoding UTF8
-    Write-NknLog "WARN" "Buffrade $($Results.Count) resultat lokalt ($($script:BufferPath))"
+    try {
+        $dir = Split-Path -Parent $Path
+        if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
+        $lines = $Results | ForEach-Object { $_ | ConvertTo-Json -Depth 6 -Compress }
+        Add-Content -Path $Path -Value $lines -Encoding UTF8
+        $size = (Get-Item $Path).Length
+        Write-NknLog "WARN" "Buffrade $($Results.Count) resultat -> $Path ($size bytes totalt)"
+    } catch {
+        Write-NknLog "ERROR" "Kunde INTE skriva buffer ($Path): $_"
+    }
 }
 
 function Invoke-BufferFlush {
-    param([pscustomobject]$Config)
-    if (-not (Test-Path $script:BufferPath)) { return }
+    param([pscustomobject]$Config, [string]$Path, [int]$RetentionDays = 7)
+    if (-not (Test-Path $Path)) { return }
 
-    $lines = @(Get-Content -Path $script:BufferPath -Encoding UTF8 -ErrorAction SilentlyContinue)
+    $lines = @(Get-Content -Path $Path -Encoding UTF8 -ErrorAction SilentlyContinue)
     if ($lines.Count -eq 0) {
-        Remove-Item $script:BufferPath -ErrorAction SilentlyContinue
+        Remove-Item $Path -ErrorAction SilentlyContinue
         return
     }
 
-    $cutoff = (Get-Date).ToUniversalTime().AddDays(-$script:BufferRetentionDays)
+    $cutoff = (Get-Date).ToUniversalTime().AddDays(-$RetentionDays)
     $buffered = @()
     $expired = 0
     foreach ($line in $lines) {
@@ -428,8 +433,8 @@ function Invoke-BufferFlush {
     }
 
     if ($buffered.Count -eq 0) {
-        Remove-Item $script:BufferPath -ErrorAction SilentlyContinue
-        if ($expired -gt 0) { Write-NknLog "INFO" "Buffer rensad: $expired resultat var äldre än $($script:BufferRetentionDays) dagar" }
+        Remove-Item $Path -ErrorAction SilentlyContinue
+        if ($expired -gt 0) { Write-NknLog "INFO" "Buffer rensad: $expired resultat var äldre än $RetentionDays dagar" }
         return
     }
 
@@ -454,18 +459,19 @@ function Invoke-BufferFlush {
     }
 
     if ($remaining.Count -eq 0) {
-        Remove-Item $script:BufferPath -ErrorAction SilentlyContinue
+        Remove-Item $Path -ErrorAction SilentlyContinue
         Write-NknLog "INFO" "Buffer flushad: $sent resultat skickade, $expired övergamla rensade"
     } else {
         $newLines = $remaining | ForEach-Object { $_ | ConvertTo-Json -Depth 6 -Compress }
-        Set-Content -Path $script:BufferPath -Value $newLines -Encoding UTF8
+        Set-Content -Path $Path -Value $newLines -Encoding UTF8
         Write-NknLog "INFO" "Buffer delvis flushad: $sent skickade, $($remaining.Count) kvar"
     }
 }
 
 function Get-BufferSize {
-    if (-not (Test-Path $script:BufferPath)) { return 0 }
-    $lines = @(Get-Content -Path $script:BufferPath -Encoding UTF8 -ErrorAction SilentlyContinue)
+    param([string]$Path)
+    if (-not (Test-Path $Path)) { return 0 }
+    $lines = @(Get-Content -Path $Path -Encoding UTF8 -ErrorAction SilentlyContinue)
     return $lines.Count
 }
 
@@ -573,10 +579,11 @@ if (-not $config -or -not $config.client_token -or $config.coordinator_url -ne $
     $config = Register-Probe
 }
 
-$initialBuffered = Get-BufferSize
+Write-NknLog "INFO" "Buffer-fil: $BufferPath"
+$initialBuffered = Get-BufferSize -Path $BufferPath
 if ($initialBuffered -gt 0) {
     Write-NknLog "INFO" "Lokal buffer innehåller $initialBuffered resultat - försöker flusha vid uppstart"
-    try { Invoke-BufferFlush -Config $config } catch { Write-NknLog "WARN" "Initial flush misslyckades: $_" }
+    try { Invoke-BufferFlush -Config $config -Path $BufferPath -RetentionDays $BufferRetentionDays } catch { Write-NknLog "WARN" "Initial flush misslyckades: $_" }
 }
 
 $specCacheUntil = [datetime]::MinValue
@@ -665,8 +672,9 @@ while ($true) {
         try {
             Send-Results -Config $config -Results $results
             # Lyckad skickning - passa på att tömma buffer om den finns
-            Invoke-BufferFlush -Config $config
+            Invoke-BufferFlush -Config $config -Path $BufferPath -RetentionDays $BufferRetentionDays
         } catch {
+            $exType = if ($_.Exception) { $_.Exception.GetType().Name } else { "okänt" }
             if (Test-IsAuthError $_) {
                 Write-NknLog "WARN" "Results-rapport fick 401 - registrerar om"
                 $config = Register-Probe
@@ -674,8 +682,8 @@ while ($true) {
                 $nextHeartbeatAt = [datetime]::MinValue
                 $lastRun = @{}
             } else {
-                Write-NknLog "WARN" "Inrapportering misslyckades, buffrar lokalt: $_"
-                Save-ResultsToBuffer -Results $results
+                Write-NknLog "WARN" "Inrapportering misslyckades ($exType), buffrar lokalt: $($_.Exception.Message)"
+                Save-ResultsToBuffer -Results $results -Path $BufferPath
             }
         }
     }
