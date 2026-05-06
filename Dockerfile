@@ -71,6 +71,9 @@ COPY coordinator/src /app/coordinator/src
 # Default-config (kopieras till /data/config.yaml vid första start om saknas)
 COPY coordinator/config.yaml /usr/share/nkn-mon/config.yaml.default
 
+# PowerShell-klient som distribueras till probes via /probe/client/download
+COPY client/NknMonitor.ps1 /app/client/NknMonitor.ps1
+
 # Grafana-provisioning (read-only) och defaultdashboards
 COPY grafana/provisioning /etc/grafana/provisioning
 COPY grafana/dashboards /usr/share/grafana/dashboards-default

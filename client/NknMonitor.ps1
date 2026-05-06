@@ -1,6 +1,7 @@
 ﻿<#
+# Version: 0.6.0
 .SYNOPSIS
-    NKN-Monitor probe-klient v0.1 (PowerShell).
+    NKN-Monitor probe-klient (PowerShell).
 
 .DESCRIPTION
     Registrerar maskinen mot en NKN-Monitor coordinator, hämtar mätspec och
@@ -87,6 +88,7 @@ Import-Module DnsClient -ErrorAction SilentlyContinue | Out-Null
 
 $BufferPath = Join-Path (Split-Path -Parent $ConfigPath) "buffer.jsonl"
 $BufferRetentionDays = 7
+$Script:NknClientVersion = "0.6.0"
 
 # Cache av primär lokal IPv4. Uppdateras vid varje heartbeat.
 $Global:NknPrimaryLocalIp = $null
@@ -138,6 +140,48 @@ function Unprotect-Token {
     } catch {
         Write-NknLog "WARN" "Kunde inte dekryptera token: $_"
         return ""
+    }
+}
+
+function Update-Self {
+    <#
+        Ladda ner ny klientversion från coordinator, verifiera SHA-256
+        och ersätt aktuella skriptet på disk. Backup till .old så
+        man kan rollback:a manuellt vid behov. Avslutar processen efter
+        lyckad uppdatering - Scheduled Task eller manuell restart plockar
+        upp den nya versionen.
+    #>
+    param([string]$Url, [string]$ExpectedSha256, [string]$ExpectedVersion)
+
+    $current = $PSCommandPath
+    if (-not $current -or -not (Test-Path $current)) {
+        Write-NknLog "WARN" "Vet inte vart skriptet bor på disk - update skippas"
+        return
+    }
+
+    $tmp = "$current.new"
+    try {
+        Write-NknLog "INFO" "Laddar ner ny klient v$ExpectedVersion från $Url"
+        Invoke-WebRequest -Uri $Url -OutFile $tmp -UseBasicParsing -TimeoutSec 60
+        $actualHash = (Get-FileHash -Path $tmp -Algorithm SHA256).Hash.ToLower()
+        $expected = $ExpectedSha256.ToLower()
+        if ($actualHash -ne $expected) {
+            Write-NknLog "ERROR" "SHA256-mismatch ($actualHash vs $expected) - rör inte filen"
+            Remove-Item $tmp -ErrorAction SilentlyContinue
+            return
+        }
+        $backup = "$current.old"
+        Remove-Item $backup -ErrorAction SilentlyContinue
+        Move-Item -Path $current -Destination $backup -Force
+        Move-Item -Path $tmp -Destination $current -Force
+        Write-NknLog "INFO" "Skript uppdaterat till v$ExpectedVersion. Avslutar för restart."
+        # Exit normalt så Scheduled Task (vid Restart on failure) eller manuell
+        # nystart plockar upp den nya filen. PS-script kan inte enkelt re-exec
+        # sig själv mid-pipeline.
+        exit 0
+    } catch {
+        Write-NknLog "ERROR" "Update misslyckades: $_"
+        Remove-Item $tmp -ErrorAction SilentlyContinue
     }
 }
 
@@ -753,7 +797,7 @@ function Send-Heartbeat {
 
     $payload = @{
         timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-        version = "0.3.0"
+        version = $Script:NknClientVersion
         network_context = $netCtx
         host_info = $hostInfo
     }
@@ -837,6 +881,16 @@ while ($true) {
                 $heartbeatIntervalSeconds = [int]$hbResp.next_heartbeat_in_seconds
             }
             $nextHeartbeatAt = $now.AddSeconds($heartbeatIntervalSeconds)
+
+            # Erbjuden klientuppdatering?
+            if ($hbResp -and $hbResp.PSObject.Properties["client_update"] -and $hbResp.client_update) {
+                $cu = $hbResp.client_update
+                if ($cu.version -and $cu.version -ne $Script:NknClientVersion) {
+                    Write-NknLog "INFO" "Servern erbjuder klient v$($cu.version) (har $($Script:NknClientVersion))"
+                    Update-Self -Url "$CoordinatorUrl$($cu.url)" `
+                        -ExpectedSha256 $cu.sha256 -ExpectedVersion $cu.version
+                }
+            }
         } catch {
             if (Test-IsAuthError $_) {
                 Write-NknLog "WARN" "Heartbeat fick 401 - registrerar om"

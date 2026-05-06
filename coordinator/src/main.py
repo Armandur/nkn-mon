@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from .api.admin import router as admin_router
 from .classification import classify_public_ip
+from .client_distribution import ClientInfo
 from .config import CoordinatorConfig, load_config
 from .peers import assign_peers
 from .storage.sqlite import Probe, Storage, generate_token, open_storage
@@ -38,6 +39,16 @@ async def lifespan(app: FastAPI):
     app.state.http = httpx.AsyncClient(timeout=10.0)
     app.state.config = load_config()
     app.state.storage = open_storage()
+    app.state.client_info = ClientInfo.load()
+    if app.state.client_info.version:
+        logger.info(
+            "Klient-distribution: NknMonitor.ps1 v%s (%d bytes, sha256=%s)",
+            app.state.client_info.version,
+            app.state.client_info.size,
+            app.state.client_info.sha256[:12],
+        )
+    else:
+        logger.warning("Klient-skript saknas eller har ingen Version-header - update inaktiverat")
     logger.info(
         "Coordinator startar, VM_URL=%s, %d builtin-mått, %d registrerade probes",
         VM_URL,
@@ -176,12 +187,20 @@ class HeartbeatRequest(BaseModel):
     host_info: HostInfo = Field(default_factory=HostInfo)
 
 
+class ClientUpdate(BaseModel):
+    version: str
+    url: str
+    sha256: str
+    size: int
+
+
 class HeartbeatResponse(BaseModel):
     spec_changed: bool = True
     spec_url: str = "/probe/spec"
     network_classification: str
     next_heartbeat_in_seconds: int
     client_actions: list[str] = Field(default_factory=list)
+    client_update: ClientUpdate | None = None
 
 
 # --- Auth-dependency --------------------------------------------------------
@@ -326,6 +345,26 @@ async def heartbeat(
         except httpx.HTTPError as exc:
             logger.warning("Kunde inte skriva heartbeat-metrics: %s", exc)
 
+    # Klient-uppdatering: erbjuds om probe rapporterat annan version än senaste
+    update = None
+    client_info: ClientInfo = request.app.state.client_info
+    if (
+        client_info.version
+        and client_info.sha256
+        and req.version
+        and req.version != client_info.version
+    ):
+        update = ClientUpdate(
+            version=client_info.version,
+            url="/probe/client/download",
+            sha256=client_info.sha256,
+            size=client_info.size,
+        )
+        logger.info(
+            "Erbjuder uppdatering till %s: %s -> %s",
+            probe.id, req.version, client_info.version,
+        )
+
     logger.info(
         "Heartbeat probe=%s public_ip=%s -> %s",
         probe.id, req.network_context.public_ip, classification,
@@ -335,6 +374,44 @@ async def heartbeat(
         spec_url="/probe/spec",
         network_classification=classification,
         next_heartbeat_in_seconds=config.heartbeat_interval_seconds,
+        client_update=update,
+    )
+
+
+@app.get("/probe/client/version")
+async def get_client_version(
+    request: Request, probe: Probe = Depends(authenticated_probe)
+) -> dict:
+    """Returnera info om senaste klientversion (utan att ladda ner)."""
+    info: ClientInfo = request.app.state.client_info
+    if not info.version:
+        raise HTTPException(status_code=404, detail="Ingen klient distribueras härifrån")
+    return {
+        "version": info.version,
+        "sha256": info.sha256,
+        "size": info.size,
+        "url": "/probe/client/download",
+    }
+
+
+@app.get("/probe/client/download")
+async def download_client(
+    request: Request, probe: Probe = Depends(authenticated_probe)
+):
+    """Returnera senaste klient-skript som en binär nedladdning."""
+    from fastapi.responses import Response
+    info: ClientInfo = request.app.state.client_info
+    if not info.version or not info.sha256:
+        raise HTTPException(status_code=404, detail="Ingen klient distribueras härifrån")
+    data = info.read_bytes()
+    return Response(
+        content=data,
+        media_type="text/plain; charset=utf-8",
+        headers={
+            "X-Client-Version": info.version,
+            "X-Client-SHA256": info.sha256,
+            "Content-Disposition": 'attachment; filename="NknMonitor.ps1"',
+        },
     )
 
 
