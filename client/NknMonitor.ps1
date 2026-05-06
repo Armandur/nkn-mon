@@ -380,6 +380,103 @@ function Send-Results {
     Write-NknLog "INFO" "Skickade $($Results.Count) resultat: accepted=$($resp.accepted) rejected=$($resp.rejected)"
 }
 
+function Get-PublicIp {
+    foreach ($url in @("https://api.ipify.org", "https://ifconfig.me/ip", "https://ipv4.icanhazip.com")) {
+        try {
+            $ip = (Invoke-WebRequest -Uri $url -TimeoutSec 5 -UseBasicParsing).Content.Trim()
+            if ($ip -match "^\d+\.\d+\.\d+\.\d+$") { return $ip }
+        } catch {}
+    }
+    return $null
+}
+
+function Get-NetworkContext {
+    param([object[]]$CanaryTargets)
+
+    $publicIp = Get-PublicIp
+
+    $localIPv4 = @()
+    try {
+        $localIPv4 = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Where-Object { $_.IPAddress -ne "127.0.0.1" -and $_.PrefixOrigin -ne "WellKnown" } |
+            Select-Object -ExpandProperty IPAddress)
+    } catch {}
+
+    $gateway = $null
+    try {
+        $route = Get-NetRoute -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue |
+            Sort-Object RouteMetric | Select-Object -First 1
+        if ($route) { $gateway = $route.NextHop }
+    } catch {}
+
+    $dnsServers = @()
+    try {
+        $dnsServers = @(Get-DnsClientServerAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Where-Object { $_.ServerAddresses } |
+            ForEach-Object { $_.ServerAddresses } |
+            Sort-Object -Unique)
+    } catch {}
+
+    $domain = $env:USERDNSDOMAIN
+
+    $canaryResults = @()
+    foreach ($c in $CanaryTargets) {
+        if (-not $c -or -not $c.target) { continue }
+        $cr = [ordered]@{
+            target = $c.target
+            reachable = $false
+            rtt_ms = $null
+        }
+        try {
+            $ping = Test-Connection -ComputerName $c.target -Count 1 -ErrorAction Stop
+            $cr.reachable = $true
+            if ($ping.PSObject.Properties["Latency"]) { $cr.rtt_ms = [double]$ping.Latency }
+            elseif ($ping.PSObject.Properties["ResponseTime"]) { $cr.rtt_ms = [double]$ping.ResponseTime }
+        } catch {}
+        $canaryResults += [pscustomobject]$cr
+    }
+
+    return [pscustomobject]@{
+        public_ip = $publicIp
+        local_ipv4 = $localIPv4
+        default_gateway = $gateway
+        dns_servers = $dnsServers
+        domain_membership = $domain
+        canary_results = $canaryResults
+    }
+}
+
+function Get-HostInfo {
+    $info = [ordered]@{
+        os = "$([System.Environment]::OSVersion.VersionString)"
+        uptime_hours = $null
+    }
+    try {
+        $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+        $info.uptime_hours = [double]((Get-Date) - $os.LastBootUpTime).TotalHours
+        $info.os = "$($os.Caption) $($os.Version)"
+    } catch {}
+    return [pscustomobject]$info
+}
+
+function Send-Heartbeat {
+    param([pscustomobject]$Config, [object[]]$CanaryTargets)
+
+    $netCtx = Get-NetworkContext -CanaryTargets $CanaryTargets
+    $hostInfo = Get-HostInfo
+
+    $payload = @{
+        timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+        version = "0.3.0"
+        network_context = $netCtx
+        host_info = $hostInfo
+    }
+    $headers = @{ Authorization = "Bearer $($Config.client_token)" }
+    $resp = Invoke-NknJson -Method Post -Uri "$CoordinatorUrl/probe/heartbeat" -Headers $headers -Body $payload
+    Write-NknLog "INFO" "Heartbeat: classification=$($resp.network_classification), public_ip=$($netCtx.public_ip), canaries=$($netCtx.canary_results.Count), nästa om $($resp.next_heartbeat_in_seconds)s"
+    return $resp
+}
+
 # --- Huvudloop -------------------------------------------------------------
 
 $config = Read-LocalConfig
@@ -389,37 +486,67 @@ if (-not $config -or -not $config.client_token -or $config.coordinator_url -ne $
 
 $specCacheUntil = [datetime]::MinValue
 $specMeasurements = @()
-$heartbeatSeconds = 60
+$canaryTargets = @()
+$lastRun = @{}
+$nextHeartbeatAt = [datetime]::MinValue
+$heartbeatIntervalSeconds = 60   # initial; uppdateras från heartbeat-svar
+$tickSeconds = 5                 # huvudloopens vakna-intervall
 
 while ($true) {
-    if ((Get-Date) -ge $specCacheUntil) {
+    $now = Get-Date
+
+    if ($now -ge $specCacheUntil) {
         try {
             $spec = Get-Spec -Token $config.client_token
             $supportedTypes = @("icmp_ping", "tcp_ping", "dns_query", "http_get")
             $specMeasurements = @($spec.measurements | Where-Object { $supportedTypes -contains $_.type })
+            $canaryTargets = @()
+            if ($spec.PSObject.Properties["canary_targets"] -and $spec.canary_targets) {
+                $canaryTargets = @($spec.canary_targets)
+            }
 
-            # Respektera coordinatorns valid_until så config-ändringar plockas upp
-            # snabbt. Fallback till 2 min om fältet saknas eller inte kan parsas.
             $newCacheUntil = $null
             if ($spec.PSObject.Properties["valid_until"] -and $spec.valid_until) {
                 try { $newCacheUntil = [DateTime]::Parse($spec.valid_until).ToLocalTime() } catch {}
             }
-            if (-not $newCacheUntil -or $newCacheUntil -le (Get-Date)) {
-                $newCacheUntil = (Get-Date).AddMinutes(2)
+            if (-not $newCacheUntil -or $newCacheUntil -le $now) {
+                $newCacheUntil = $now.AddMinutes(2)
             }
             $specCacheUntil = $newCacheUntil
 
             $byType = $specMeasurements | Group-Object type | ForEach-Object { "$($_.Count) $($_.Name)" }
-            Write-NknLog "INFO" "Spec hämtad: $($specMeasurements.Count) mål ($($byType -join ', ')), giltig till $($specCacheUntil.ToString('HH:mm:ss'))"
+            Write-NknLog "INFO" "Spec hämtad: $($specMeasurements.Count) mål ($($byType -join ', ')), $($canaryTargets.Count) canaries, giltig till $($specCacheUntil.ToString('HH:mm:ss'))"
         } catch {
             Write-NknLog "WARN" "Spec-hämtning misslyckades: $_"
         }
     }
 
+    if ($now -ge $nextHeartbeatAt) {
+        try {
+            $hbResp = Send-Heartbeat -Config $config -CanaryTargets $canaryTargets
+            if ($hbResp -and $hbResp.PSObject.Properties["next_heartbeat_in_seconds"]) {
+                $heartbeatIntervalSeconds = [int]$hbResp.next_heartbeat_in_seconds
+            }
+        } catch {
+            Write-NknLog "WARN" "Heartbeat misslyckades: $_"
+        }
+        $nextHeartbeatAt = $now.AddSeconds($heartbeatIntervalSeconds)
+    }
+
+    # Per-mått-intervall: kör bara mått som passerat sin interval_seconds.
     $results = @()
     foreach ($m in $specMeasurements) {
+        $mid = $m.id
+        $interval = [int]$m.interval_seconds
+        if ($interval -le 0) { $interval = 60 }
+        $due = $true
+        if ($lastRun.ContainsKey($mid)) {
+            $due = $now -ge $lastRun[$mid].AddSeconds($interval)
+        }
+        if (-not $due) { continue }
         $r = Invoke-Measurement -Measurement $m
         if ($r) { $results += $r }
+        $lastRun[$mid] = $now
     }
 
     if ($results.Count -gt 0) {
@@ -431,8 +558,5 @@ while ($true) {
     }
 
     if ($Once) { break }
-
-    # Iteration 2 v0.1: ett gemensamt intervall för alla mätningar.
-    # Per-mått-intervall (specens interval_seconds) implementeras i nästa version.
-    Start-Sleep -Seconds $heartbeatSeconds
+    Start-Sleep -Seconds $tickSeconds
 }

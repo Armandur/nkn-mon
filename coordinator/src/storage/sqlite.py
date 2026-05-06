@@ -27,10 +27,20 @@ CREATE TABLE IF NOT EXISTS probes (
     notes TEXT,
     enabled INTEGER NOT NULL DEFAULT 1,
     last_heartbeat_at TEXT,
+    last_seen_public_ip TEXT,
+    last_classification TEXT,
+    version TEXT,
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_probes_token_hash ON probes(token_hash);
 """
+
+# Kolumner som kan saknas i äldre databaser (Iteration 2 leverans 1).
+_MIGRATIONS: list[tuple[str, str]] = [
+    ("last_seen_public_ip", "TEXT"),
+    ("last_classification", "TEXT"),
+    ("version", "TEXT"),
+]
 
 
 def hash_token(token: str) -> str:
@@ -61,6 +71,10 @@ class Storage:
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
+            existing = {row["name"] for row in conn.execute("PRAGMA table_info(probes)")}
+            for col, ddl in _MIGRATIONS:
+                if col not in existing:
+                    conn.execute(f"ALTER TABLE probes ADD COLUMN {col} {ddl}")
             conn.commit()
 
     @contextmanager
@@ -124,6 +138,22 @@ class Storage:
         now = datetime.now(timezone.utc).isoformat()
         with self._lock, self._connect() as conn:
             conn.execute("UPDATE probes SET last_heartbeat_at = ? WHERE id = ?", (now, probe_id))
+            conn.commit()
+
+    def update_heartbeat_meta(
+        self,
+        probe_id: str,
+        public_ip: str | None,
+        classification: str | None,
+        version: str | None,
+    ) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE probes SET last_heartbeat_at = ?, last_seen_public_ip = ?, "
+                "last_classification = ?, version = COALESCE(?, version) WHERE id = ?",
+                (now, public_ip, classification, version, probe_id),
+            )
             conn.commit()
 
     def count_probes(self) -> int:

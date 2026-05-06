@@ -88,6 +88,29 @@ def build_lines(client_id: str, results: Iterable) -> list[str]:
     return lines
 
 
+def build_heartbeat_lines(
+    client_id: str,
+    site: str,
+    classification: str,
+    timestamp: str,
+    canary_results: list[tuple[str, bool, float | None]],
+) -> list[str]:
+    """Bygg metrics för en heartbeat: nkn_probe_up + canary-mätningar."""
+    ts_ns = _iso_to_ns(timestamp)
+    base_tags = {
+        "client_id": client_id,
+        "site": site,
+        "classification": classification,
+    }
+    lines = [_line("nkn_probe_up", base_tags, 1.0, ts_ns)]
+    for target, reachable, rtt_ms in canary_results:
+        ctags = {**base_tags, "target": target}
+        lines.append(_line("nkn_canary_reachable", ctags, 1.0 if reachable else 0.0, ts_ns))
+        if rtt_ms is not None:
+            lines.append(_line("nkn_canary_rtt_ms", ctags, rtt_ms, ts_ns))
+    return lines
+
+
 async def write_to_vm(client: httpx.AsyncClient, vm_url: str, lines: list[str]) -> None:
     if not lines:
         return

@@ -20,9 +20,10 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from .api.admin import router as admin_router
+from .classification import classify_public_ip
 from .config import CoordinatorConfig, load_config
 from .storage.sqlite import Probe, Storage, generate_token, open_storage
-from .vm import build_lines, write_to_vm
+from .vm import build_heartbeat_lines, build_lines, write_to_vm
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -85,10 +86,16 @@ class SpecMeasurement(BaseModel):
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
+class CanaryTarget(BaseModel):
+    target: str
+    description: str | None = None
+
+
 class SpecResponse(BaseModel):
     spec_version: str
     valid_until: str
     measurements: list[SpecMeasurement]
+    canary_targets: list[CanaryTarget] = Field(default_factory=list)
 
 
 class MeasurementResult(BaseModel):
@@ -130,6 +137,41 @@ class ResultsResponse(BaseModel):
     accepted: int
     rejected: int
     rejected_reasons: list[str] = Field(default_factory=list)
+
+
+class CanaryResult(BaseModel):
+    target: str
+    reachable: bool
+    rtt_ms: float | None = None
+
+
+class NetworkContext(BaseModel):
+    public_ip: str | None = None
+    local_ipv4: list[str] = Field(default_factory=list)
+    default_gateway: str | None = None
+    dns_servers: list[str] = Field(default_factory=list)
+    domain_membership: str | None = None
+    canary_results: list[CanaryResult] = Field(default_factory=list)
+
+
+class HostInfo(BaseModel):
+    os: str | None = None
+    uptime_hours: float | None = None
+
+
+class HeartbeatRequest(BaseModel):
+    timestamp: str
+    version: str | None = None
+    network_context: NetworkContext = Field(default_factory=NetworkContext)
+    host_info: HostInfo = Field(default_factory=HostInfo)
+
+
+class HeartbeatResponse(BaseModel):
+    spec_changed: bool = True
+    spec_url: str = "/probe/spec"
+    network_classification: str
+    next_heartbeat_in_seconds: int
+    client_actions: list[str] = Field(default_factory=list)
 
 
 # --- Auth-dependency --------------------------------------------------------
@@ -196,10 +238,65 @@ async def get_spec(request: Request, probe: Probe = Depends(authenticated_probe)
     now = datetime.now(timezone.utc)
     valid_until = now + timedelta(seconds=config.spec_validity_seconds)
     measurements = [_to_spec_measurement(m) for m in config.builtin_measurements]
+    canaries = [
+        CanaryTarget(target=c.get("target", ""), description=c.get("description"))
+        for c in config.canary_targets
+        if c.get("target")
+    ]
     return SpecResponse(
         spec_version=now.isoformat(timespec="seconds"),
         valid_until=valid_until.isoformat(timespec="seconds"),
         measurements=measurements,
+        canary_targets=canaries,
+    )
+
+
+@app.post("/probe/heartbeat", response_model=HeartbeatResponse)
+async def heartbeat(
+    req: HeartbeatRequest,
+    request: Request,
+    probe: Probe = Depends(authenticated_probe),
+) -> HeartbeatResponse:
+    if not _valid_iso(req.timestamp):
+        raise HTTPException(status_code=400, detail="Ogiltigt timestamp")
+
+    config: CoordinatorConfig = request.app.state.config
+    storage: Storage = request.app.state.storage
+
+    classification = classify_public_ip(
+        req.network_context.public_ip, config.nkn_public_ip_ranges
+    )
+    storage.update_heartbeat_meta(
+        probe_id=probe.id,
+        public_ip=req.network_context.public_ip,
+        classification=classification,
+        version=req.version,
+    )
+
+    lines = build_heartbeat_lines(
+        client_id=probe.id,
+        site=probe.site_name or "",
+        classification=classification,
+        timestamp=req.timestamp,
+        canary_results=[
+            (cr.target, cr.reachable, cr.rtt_ms) for cr in req.network_context.canary_results
+        ],
+    )
+    if lines:
+        try:
+            await write_to_vm(request.app.state.http, VM_URL, lines)
+        except httpx.HTTPError as exc:
+            logger.warning("Kunde inte skriva heartbeat-metrics: %s", exc)
+
+    logger.info(
+        "Heartbeat probe=%s public_ip=%s -> %s",
+        probe.id, req.network_context.public_ip, classification,
+    )
+    return HeartbeatResponse(
+        spec_changed=True,
+        spec_url="/probe/spec",
+        network_classification=classification,
+        next_heartbeat_in_seconds=config.heartbeat_interval_seconds,
     )
 
 
