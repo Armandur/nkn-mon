@@ -160,6 +160,15 @@ class Storage:
         with self._connect() as conn:
             return conn.execute("SELECT COUNT(*) FROM probes WHERE enabled = 1").fetchone()[0]
 
+    def list_probes(self) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, hostname, site_name, ecclesiastical_unit, site_type, "
+                "enabled, last_heartbeat_at, last_seen_public_ip, last_classification, "
+                "version, created_at FROM probes ORDER BY created_at DESC"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
 
 def open_storage() -> Storage:
     return Storage(os.getenv("DATABASE_PATH", "/app/data/coordinator.db"))

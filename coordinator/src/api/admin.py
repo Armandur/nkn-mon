@@ -129,6 +129,11 @@ def get_status(request: Request, _: str = Depends(require_admin)) -> dict:
     }
 
 
+@router.get("/api/probes")
+def get_probes(request: Request, _: str = Depends(require_admin)) -> dict:
+    return {"probes": request.app.state.storage.list_probes()}
+
+
 _ADMIN_HTML = r"""<!DOCTYPE html>
 <html lang="sv">
 <head>
@@ -230,6 +235,31 @@ _ADMIN_HTML = r"""<!DOCTYPE html>
     border-radius: 3px; padding: 1px 6px;
     font-family: inherit; font-size: 12px;
   }
+  .probes-section { margin-top: 24px; }
+  table.probes {
+    width: 100%; border-collapse: collapse; font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+  table.probes th, table.probes td {
+    padding: 6px 8px; text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  table.probes th {
+    color: var(--muted); font-weight: 500;
+    text-transform: uppercase; font-size: 11px;
+    letter-spacing: 0.05em;
+  }
+  table.probes td.muted { color: var(--muted); }
+  .badge {
+    display: inline-block; padding: 1px 8px; border-radius: 3px;
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+  }
+  .badge.nkn { background: var(--accent-dim); color: var(--accent); }
+  .badge.external { background: rgba(215, 186, 125, 0.2); color: var(--warn); }
+  .badge.unknown { background: rgba(122, 128, 136, 0.2); color: var(--muted); }
+  .age-fresh { color: var(--success); }
+  .age-stale { color: var(--warn); }
+  .age-dead { color: var(--error); }
 </style>
 </head>
 <body>
@@ -261,6 +291,24 @@ _ADMIN_HTML = r"""<!DOCTYPE html>
       </dl>
     </aside>
   </div>
+
+  <section class="card probes-section">
+    <h2>Registrerade probes</h2>
+    <table class="probes">
+      <thead>
+        <tr>
+          <th>Site</th>
+          <th>Hostname</th>
+          <th>Typ</th>
+          <th>Klassificering</th>
+          <th>Publik IP</th>
+          <th>Senaste heartbeat</th>
+          <th>Version</th>
+        </tr>
+      </thead>
+      <tbody id="probes-body"></tbody>
+    </table>
+  </section>
 </main>
 <script>
 const editor = document.getElementById("editor");
@@ -292,6 +340,52 @@ async function refreshStatus() {
   document.getElementById("s-canary").textContent = s.canary_targets;
   document.getElementById("s-hb").textContent = s.heartbeat_interval_seconds + "s";
   document.getElementById("s-reload").textContent = s.config_reloaded_at || "(uppstart)";
+}
+
+function escapeHtml(s) {
+  if (s === null || s === undefined) return "";
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  })[c]);
+}
+
+function formatAge(iso) {
+  if (!iso) return { text: "aldrig", cls: "age-dead" };
+  const seen = new Date(iso).getTime();
+  const seconds = Math.round((Date.now() - seen) / 1000);
+  let text;
+  if (seconds < 60) text = seconds + "s sen";
+  else if (seconds < 3600) text = Math.round(seconds/60) + " min sen";
+  else if (seconds < 86400) text = Math.round(seconds/3600) + " h sen";
+  else text = Math.round(seconds/86400) + " d sen";
+  let cls = "age-fresh";
+  if (seconds > 600) cls = "age-stale";
+  if (seconds > 3600) cls = "age-dead";
+  return { text, cls };
+}
+
+async function refreshProbes() {
+  const r = await fetch("/admin/api/probes");
+  if (!r.ok) return;
+  const data = await r.json();
+  const tbody = document.getElementById("probes-body");
+  if (!data.probes.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="muted">Inga registrerade probes ännu</td></tr>';
+    return;
+  }
+  tbody.innerHTML = data.probes.map(p => {
+    const cls = (p.last_classification || "unknown").toLowerCase();
+    const age = formatAge(p.last_heartbeat_at);
+    return `<tr>
+      <td>${escapeHtml(p.site_name) || '<span class="muted">-</span>'}</td>
+      <td>${escapeHtml(p.hostname) || '<span class="muted">-</span>'}</td>
+      <td class="muted">${escapeHtml(p.site_type) || '-'}</td>
+      <td><span class="badge ${cls}">${escapeHtml(cls)}</span></td>
+      <td>${escapeHtml(p.last_seen_public_ip) || '<span class="muted">-</span>'}</td>
+      <td class="${age.cls}">${age.text}</td>
+      <td class="muted">${escapeHtml(p.version) || '-'}</td>
+    </tr>`;
+  }).join("");
 }
 
 async function saveConfig() {
@@ -329,7 +423,9 @@ document.addEventListener("keydown", (e) => {
 });
 
 loadConfig();
+refreshProbes();
 setInterval(refreshStatus, 10000);
+setInterval(refreshProbes, 5000);
 </script>
 </body>
 </html>

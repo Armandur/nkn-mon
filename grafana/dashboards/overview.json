@@ -11,12 +11,56 @@
       "datasource": {"type": "prometheus", "uid": "victoriametrics"},
       "fieldConfig": {
         "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "blue", "value": null}
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "nkn"},
+            "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "green"}}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "external"},
+            "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "orange"}}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "unknown"},
+            "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "gray"}}]
+          }
+        ]
+      },
+      "gridPos": {"h": 6, "w": 24, "x": 0, "y": 0},
+      "id": 100,
+      "options": {
+        "colorMode": "background",
+        "orientation": "horizontal",
+        "textMode": "value_and_name",
+        "graphMode": "none",
+        "justifyMode": "center"
+      },
+      "targets": [
+        {"expr": "count by (classification) (nkn_probe_up)", "legendFormat": "{{classification}}", "refId": "A", "instant": true}
+      ],
+      "title": "Aktiva probes per klassificering",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "fieldConfig": {
+        "defaults": {
           "color": {"mode": "palette-classic"},
           "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "pointSize": 4, "showPoints": "auto", "spanNulls": false},
           "unit": "ms"
         }
       },
-      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 0},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 6},
       "id": 1,
       "options": {
         "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]},
@@ -46,7 +90,7 @@
           "min": 0
         }
       },
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 10},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
       "id": 2,
       "options": {
         "legend": {"displayMode": "list", "placement": "bottom"},
@@ -76,7 +120,7 @@
           }
         }
       },
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 10},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
       "id": 3,
       "options": {"colorMode": "background", "orientation": "auto", "textMode": "auto"},
       "targets": [
@@ -94,7 +138,7 @@
           "unit": "ms"
         }
       },
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 18},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
       "id": 4,
       "options": {
         "legend": {"displayMode": "list", "placement": "bottom"},
@@ -115,7 +159,7 @@
           "unit": "ms"
         }
       },
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 18},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
       "id": 5,
       "options": {
         "legend": {"displayMode": "list", "placement": "bottom"},
@@ -136,7 +180,7 @@
           "unit": "ms"
         }
       },
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 26},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
       "id": 6,
       "options": {
         "legend": {"displayMode": "list", "placement": "bottom"},
@@ -173,13 +217,61 @@
           }
         }
       },
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 26},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
       "id": 7,
       "options": {"colorMode": "background", "orientation": "auto", "textMode": "auto"},
       "targets": [
         {"expr": "nkn_http_status", "legendFormat": "{{site}} -> {{measurement_id}}", "refId": "A", "instant": true}
       ],
       "title": "Senaste HTTP-status",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "pointSize": 4, "showPoints": "auto", "spanNulls": false},
+          "unit": "ms"
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40},
+      "id": 8,
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom"},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [
+        {"expr": "nkn_canary_rtt_ms", "legendFormat": "{{site}} -> {{target}}", "refId": "A"}
+      ],
+      "title": "Canary-RTT",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [
+            {"options": {"0": {"text": "Down", "color": "red"}}, "type": "value"},
+            {"options": {"1": {"text": "Up", "color": "green"}}, "type": "value"}
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "green", "value": 1}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40},
+      "id": 9,
+      "options": {"colorMode": "background", "orientation": "auto", "textMode": "value_and_name"},
+      "targets": [
+        {"expr": "nkn_canary_reachable", "legendFormat": "{{site}} -> {{target}}", "refId": "A", "instant": true}
+      ],
+      "title": "Canary-reachability (senaste)",
       "type": "stat"
     }
   ],
@@ -192,6 +284,6 @@
   "timezone": "browser",
   "title": "NKN-Monitor – översikt",
   "uid": "nkn-overview",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }

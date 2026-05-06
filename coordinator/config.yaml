@@ -53,5 +53,8 @@ canary_targets:
   - target: smtp.svenskakyrkan.se
     description: SMTP-server
 
-# IP-ranges (CIDR) som klassificeras som NKN. Lämnas tomt tills riktiga ranges känns.
-nkn_public_ip_ranges: []
+# IP-ranges (CIDR) som klassificeras som NKN. svky-out-24 hörde till 195.67.168.x;
+# /22 inkluderar 195.67.168-171.x vilket täcker eventuella systerblock. Justera när
+# du vet exakt vilka ranges Global Connect tilldelat NKN.
+nkn_public_ip_ranges:
+  - 195.67.168.0/22
