@@ -117,17 +117,34 @@
               {"color": "red", "value": null},
               {"color": "green", "value": 1}
             ]
+          },
+          "custom": {
+            "align": "center",
+            "cellOptions": {"type": "color-background", "mode": "basic"}
           }
-        }
+        },
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "site"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "auto"}}, {"id": "color", "value": {"mode": "fixed", "fixedColor": "text"}}, {"id": "custom.align", "value": "left"}, {"id": "mappings", "value": []}]},
+          {"matcher": {"id": "byName", "options": "target"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "auto"}}, {"id": "color", "value": {"mode": "fixed", "fixedColor": "text"}}, {"id": "custom.align", "value": "left"}, {"id": "mappings", "value": []}]}
+        ]
       },
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
       "id": 3,
-      "options": {"colorMode": "background", "orientation": "auto", "textMode": "auto"},
+      "options": {
+        "showHeader": true,
+        "sortBy": [{"displayName": "Status", "desc": false}]
+      },
       "targets": [
-        {"expr": "last_over_time(nkn_ping_success[10m])", "legendFormat": "{{site}} -> {{target}}", "refId": "A", "instant": true}
+        {"expr": "avg by (site, target) (last_over_time(nkn_ping_success[10m]))", "format": "table", "instant": true, "refId": "A"}
       ],
       "title": "Senaste icmp-status",
-      "type": "stat"
+      "type": "table",
+      "transformations": [
+        {"id": "organize", "options": {
+          "excludeByName": {"Time": true},
+          "renameByName": {"Value": "Status"}
+        }}
+      ]
     },
     {
       "datasource": {"type": "prometheus", "uid": "victoriametrics"},
@@ -378,6 +395,6 @@
   "timezone": "browser",
   "title": "NKN-Monitor – översikt",
   "uid": "nkn-overview",
-  "version": 8,
+  "version": 9,
   "weekStart": ""
 }

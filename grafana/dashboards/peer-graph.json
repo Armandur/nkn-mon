@@ -33,7 +33,8 @@
             {"selector": "subtitle", "text": "subtitle", "type": "string"},
             {"selector": "mainstat", "text": "mainstat", "type": "string"},
             {"selector": "secondarystat", "text": "secondarystat", "type": "string"},
-            {"selector": "color", "text": "color", "type": "string"}
+            {"selector": "color", "text": "color", "type": "string"},
+            {"selector": "nodeRadius", "text": "nodeRadius", "type": "number"}
           ]
         },
         {
@@ -50,7 +51,9 @@
             {"selector": "id", "text": "id", "type": "string"},
             {"selector": "source", "text": "source", "type": "string"},
             {"selector": "target", "text": "target", "type": "string"},
-            {"selector": "mainstat", "text": "mainstat", "type": "string"}
+            {"selector": "mainstat", "text": "mainstat", "type": "string"},
+            {"selector": "color", "text": "color", "type": "string"},
+            {"selector": "thickness", "text": "thickness", "type": "number"}
           ]
         }
       ],

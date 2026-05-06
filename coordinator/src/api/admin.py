@@ -185,6 +185,8 @@ def get_graph_nodes(
             "mainstat": ip,
             "secondarystat": p.get("hostname") or "",
             "color": "blue" if role == "anchor" else "green",
+            # nodeRadius är ett valfritt fält som överstyr panelens default
+            "nodeRadius": 60 if role == "anchor" else 35,
         })
     return nodes
 
@@ -254,11 +256,21 @@ async def get_graph_edges(
         key = (source, target_id)
         existing = edges.get(key)
         if existing is None or rtt < existing["_rtt"]:
+            if rtt < 30:
+                color = "green"
+            elif rtt < 80:
+                color = "#d7ba7d"  # gul
+            elif rtt < 200:
+                color = "orange"
+            else:
+                color = "red"
             edges[key] = {
                 "id": f"{source}-{target_id}",
                 "source": source,
                 "target": target_id,
                 "mainstat": f"{rtt:.0f} ms",
+                "color": color,
+                "thickness": 2 if rtt < 50 else 1,
                 "_rtt": rtt,
             }
     out: list[dict] = []
@@ -465,6 +477,7 @@ _ADMIN_HTML = r"""<!DOCTYPE html>
         <tr>
           <th>Site</th>
           <th>Hostname</th>
+          <th>Lokal IP</th>
           <th>Roll</th>
           <th>Klassificering</th>
           <th>Publik IP</th>
@@ -517,13 +530,22 @@ function escapeHtml(s) {
 
 function formatAge(iso) {
   if (!iso) return { text: "aldrig", cls: "age-dead" };
-  const seen = new Date(iso).getTime();
-  const seconds = Math.round((Date.now() - seen) / 1000);
+  const seconds = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
   let text;
-  if (seconds < 60) text = seconds + "s sen";
-  else if (seconds < 3600) text = Math.round(seconds/60) + " min sen";
-  else if (seconds < 86400) text = Math.round(seconds/3600) + " h sen";
-  else text = Math.round(seconds/86400) + " d sen";
+  if (seconds < 30) {
+    text = "just nu";
+  } else if (seconds < 60) {
+    text = `för ${seconds} sekunder sen`;
+  } else if (seconds < 3600) {
+    const m = Math.round(seconds / 60);
+    text = `för ${m} ${m === 1 ? "minut" : "minuter"} sen`;
+  } else if (seconds < 86400) {
+    const h = Math.round(seconds / 3600);
+    text = `för ${h} ${h === 1 ? "timme" : "timmar"} sen`;
+  } else {
+    const d = Math.round(seconds / 86400);
+    text = `för ${d} ${d === 1 ? "dag" : "dagar"} sen`;
+  }
   let cls = "age-fresh";
   if (seconds > 600) cls = "age-stale";
   if (seconds > 3600) cls = "age-dead";
@@ -543,6 +565,10 @@ async function refreshProbes() {
     const cls = (p.last_classification || "unknown").toLowerCase();
     const age = formatAge(p.last_heartbeat_at);
     const role = p.role || "probe";
+    const localIps = (p.last_local_ipv4 || []);
+    const localIpHtml = localIps.length === 0
+      ? '<span class="muted">-</span>'
+      : escapeHtml(localIps[0]) + (localIps.length > 1 ? ` <span class="muted">+${localIps.length-1}</span>` : "");
     const roleSelect = `<select class="role-select" data-id="${escapeHtml(p.id)}" data-current="${role}">
       <option value="probe"${role === "probe" ? " selected" : ""}>probe</option>
       <option value="anchor"${role === "anchor" ? " selected" : ""}>anchor</option>
@@ -550,6 +576,7 @@ async function refreshProbes() {
     return `<tr>
       <td>${escapeHtml(p.site_name) || '<span class="muted">-</span>'}</td>
       <td>${escapeHtml(p.hostname) || '<span class="muted">-</span>'}</td>
+      <td class="muted" title="${escapeHtml(localIps.join(', '))}">${localIpHtml}</td>
       <td>${roleSelect}</td>
       <td><span class="badge ${cls}">${escapeHtml(cls)}</span></td>
       <td>${escapeHtml(p.last_seen_public_ip) || '<span class="muted">-</span>'}</td>
