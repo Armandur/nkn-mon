@@ -687,6 +687,29 @@ _ADMIN_HTML = r"""<!DOCTYPE html>
   }
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
+  /* Generisk form-styling: samma utseende överallt */
+  input[type="text"], input[type="number"], input[type="password"], select {
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 3px;
+    padding: 6px 8px; font-size: 13px; font-family: inherit;
+    box-sizing: border-box;
+  }
+  input[type="text"]:focus, input[type="number"]:focus, select:focus {
+    outline: 1px solid var(--accent); border-color: var(--accent);
+  }
+  input[type="checkbox"] {
+    accent-color: var(--accent);
+    width: 16px; height: 16px;
+    margin: 4px 0;
+  }
+  label.field, .form-grid label, .meas-fields label {
+    display: flex; flex-direction: column; gap: 4px;
+    font-size: 12px; color: var(--muted);
+  }
+  label.field-inline {
+    display: flex; flex-direction: row; gap: 8px; align-items: center;
+    font-size: 13px; color: var(--text);
+  }
   .form-section { margin-bottom: 24px; }
   .form-section h3 {
     margin: 0 0 8px 0; font-size: 13px; font-weight: 600;
@@ -696,29 +719,17 @@ _ADMIN_HTML = r"""<!DOCTYPE html>
     display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 12px;
   }
-  .form-grid label {
-    display: flex; flex-direction: column; gap: 4px;
-    font-size: 12px; color: var(--muted);
-  }
-  .form-grid input, .form-grid select {
-    background: var(--bg); color: var(--text);
-    border: 1px solid var(--border); border-radius: 3px;
-    padding: 6px 8px; font-size: 13px; font-family: inherit;
-  }
-  .form-grid input:focus, .form-grid select:focus {
-    outline: 1px solid var(--accent); border-color: var(--accent);
-  }
   .list-row {
     display: flex; gap: 8px; align-items: center;
     margin-bottom: 6px;
   }
   .list-row input { flex: 1; }
-  .list-row button { padding: 4px 8px; font-size: 12px; }
+  .list-row button { padding: 6px 10px; font-size: 12px; }
   .list-add {
     background: transparent; color: var(--accent);
     border: 1px dashed var(--border); border-radius: 3px;
     padding: 6px 12px; font-size: 12px; font-weight: 500;
-    cursor: pointer;
+    cursor: pointer; font-family: inherit;
   }
   .list-add:hover { border-color: var(--accent); background: var(--surface); }
   .meas-card {
@@ -742,8 +753,26 @@ _ADMIN_HTML = r"""<!DOCTYPE html>
   }
   .meas-fields {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 8px;
+    gap: 12px;
   }
+  .toolbar-inline {
+    display: flex; align-items: center; gap: 12px;
+    flex-wrap: wrap;
+  }
+  .probes-header {
+    display: flex; align-items: center; gap: 16px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .probes-header h2 { margin: 0; flex: 1; }
+  .num-narrow { width: 70px; }
+  .help-text {
+    color: var(--muted); font-size: 12px;
+    margin: 0 0 12px 0; line-height: 1.5;
+    max-width: 80ch;
+  }
+  /* Tabb-paneler ska inte ha extra padding mot card-edges */
+  .tab-panel textarea#editor { margin-top: 0; }
   .tr-row { cursor: pointer; }
   .tr-row:hover { background: rgba(255,255,255,0.03); }
   .tr-detail {
@@ -780,6 +809,12 @@ _ADMIN_HTML = r"""<!DOCTYPE html>
       <div class="tab-panel active" id="tab-form">
         <div class="form-section">
           <h3>Globala värden</h3>
+          <p class="help-text">
+            Heartbeat-intervall styr hur ofta klienter ska skicka in network context check.
+            Spec-giltighet är hur länge en utlevererad mätspec gäller; klienter hämtar ny spec efter denna tid.
+            För dev: håll lågt (60-120 s) så config-ändringar slår igenom snabbt. För prod: höj till några minuter eller mer.
+            Peer-värden styr peer-mätningen (Iteration 3): coordinator tilldelar varje probe N andra probes på olika /24 att mäta mot, roterar dagligen.
+          </p>
           <div class="form-grid">
             <label>Heartbeat-intervall (s)<input type="number" id="f-heartbeat" min="30"></label>
             <label>Spec-giltighet (s)<input type="number" id="f-spec-validity" min="30"></label>
@@ -790,24 +825,50 @@ _ADMIN_HTML = r"""<!DOCTYPE html>
 
         <div class="form-section">
           <h3>Registreringsnycklar</h3>
+          <p class="help-text">
+            Tillåtna registreringsnycklar. Probes använder en av dessa vid första
+            <code>/probe/register</code>. Rotera vid behov - gamla nycklar kan tas bort
+            utan att redan registrerade probes påverkas, eftersom de därefter använder
+            sin individuella client_token.
+          </p>
           <div id="f-reg-keys"></div>
           <button type="button" class="list-add" data-add="reg-keys">+ lägg till nyckel</button>
         </div>
 
         <div class="form-section">
           <h3>NKN publika IP-ranges (CIDR)</h3>
+          <p class="help-text">
+            IP-ranges som klassificeras som NKN. En probe vars publika IP ligger inom
+            något av dessa CIDR-block taggas som <code>nkn</code> i metrics; övriga blir
+            <code>external</code>. Justera när du vet exakt vilka ranges Global Connect
+            tilldelat NKN.
+          </p>
           <div id="f-nkn-ranges"></div>
           <button type="button" class="list-add" data-add="nkn-ranges">+ lägg till range</button>
         </div>
 
         <div class="form-section">
           <h3>Canary-mål</h3>
+          <p class="help-text">
+            Canary-mål används av klientens network context check. Klienten pingar
+            dessa vid varje heartbeat och rapporterar reachability + RTT, så att
+            coordinator vet att proben kan nå sina lokala referenspunkter (AD, SMTP osv).
+          </p>
           <div id="f-canary"></div>
           <button type="button" class="list-add" data-add="canary">+ lägg till canary</button>
         </div>
 
         <div class="form-section">
           <h3>Builtin-mätningar</h3>
+          <p class="help-text">
+            Mål som distribueras till alla probes. Varje <code>id</code> måste vara unikt.
+            Klienten utför mätningar enligt typ:
+            <code>icmp_ping</code> (Test-Connection),
+            <code>tcp_ping</code> (TcpClient),
+            <code>dns_query</code> (Resolve-DnsName mot specifik DNS-server),
+            <code>http_get</code> (Invoke-WebRequest),
+            <code>traceroute</code> (Test-NetConnection -TraceRoute, inkl. reverse-DNS för hops).
+          </p>
           <div id="f-measurements"></div>
           <button type="button" class="list-add" data-add="measurement">+ lägg till mätning</button>
         </div>
@@ -843,14 +904,15 @@ _ADMIN_HTML = r"""<!DOCTYPE html>
   </div>
 
   <section class="card probes-section">
-    <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
-      <h2 style="margin:0;">Registrerade probes</h2>
-      <span style="flex:1;"></span>
-      <label class="hint" style="margin:0;">
-        Rensa probes äldre än
-        <input id="sweep-hours" type="number" min="1" value="24" style="width:60px; padding:2px 6px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:3px;"> h
-      </label>
-      <button class="secondary" id="sweep-btn">Rensa döda</button>
+    <div class="probes-header">
+      <h2>Registrerade probes</h2>
+      <div class="toolbar-inline">
+        <label class="field-inline">
+          Rensa probes äldre än
+          <input id="sweep-hours" type="number" min="1" value="24" class="num-narrow"> h
+        </label>
+        <button class="secondary" id="sweep-btn">Rensa döda</button>
+      </div>
     </div>
     <table class="probes">
       <thead>
