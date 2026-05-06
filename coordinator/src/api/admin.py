@@ -190,18 +190,37 @@ def get_graph_nodes(
 
 
 @router.get("/api/peer-graph/edges")
-async def get_graph_edges(request: Request, _: str = Depends(require_admin)) -> list[dict]:
+async def get_graph_edges(
+    request: Request,
+    active_within_minutes: int = 5,
+    _: str = Depends(require_admin),
+) -> list[dict]:
     """Edges-format för Grafana Node Graph-panel.
 
-    Krav-fält: id, source, target. Hämtar senaste peer-RTT från VM och
-    mappar peer_site -> probe-id via SQLite.
+    KRITISKT: alla source och target i edges MÅSTE finnas i nodes-tabellen
+    annars kraschar Grafana Node Graph-panelen ('Cannot read properties of
+    undefined (reading nodeRadius)'). Filtrerar därför edges till bara de
+    där båda noderna fortfarande är aktiva enligt samma kriterier som
+    /nodes-endpointen.
     """
+    from datetime import timedelta
+
     storage = request.app.state.storage
     probes = storage.list_probes()
-    # Mappning peer_site (-namn) -> probe-id
+    threshold = (datetime.now(timezone.utc) - timedelta(minutes=active_within_minutes)).isoformat()
+
+    active_ids: set[str] = set()
     site_to_id: dict[str, str] = {}
     for p in probes:
-        if p.get("site_name") and p.get("enabled", True):
+        if not p.get("enabled", True):
+            continue
+        if p.get("last_classification") != "nkn":
+            continue
+        hb = p.get("last_heartbeat_at")
+        if not hb or hb < threshold:
+            continue
+        active_ids.add(p["id"])
+        if p.get("site_name"):
             site_to_id[p["site_name"]] = p["id"]
 
     query = 'last_over_time(nkn_ping_rtt_ms{target_category="peer",peer_site!=""}[15m])'
@@ -224,6 +243,9 @@ async def get_graph_edges(request: Request, _: str = Depends(require_admin)) -> 
             continue
         target_id = site_to_id.get(peer_site)
         if not target_id or target_id == source:
+            continue
+        # Endast edges där BÅDA noderna är aktiva i nodes-listan.
+        if source not in active_ids or target_id not in active_ids:
             continue
         try:
             rtt = float(serie["value"][1])
