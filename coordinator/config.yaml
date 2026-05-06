@@ -4,7 +4,10 @@
 # automatiskt när admin-UI sparar; vid manuell editering på disk krävs omstart.
 
 heartbeat_interval_seconds: 300
-spec_validity_seconds: 3600
+# Hur länge en utlevererad spec gäller. Klienter respekterar detta och hämtar
+# ny spec efter denna tid. För dev: håll lågt (60-120s) så config-ändringar
+# slår igenom snabbt. För prod: höj till några minuter eller mer.
+spec_validity_seconds: 120
 
 # Tillåtna registreringsnycklar. Probes använder en av dessa vid första /probe/register.
 # Rotera vid behov; gamla nycklar kan tas bort utan att redan registrerade probes
@@ -33,7 +36,7 @@ builtin_measurements:
   - id: builtin-tcp-smtp
     type: tcp_ping
     target: smtp.svenskakyrkan.se
-    port: 587
+    port: 25
     interval_seconds: 60
 
   - id: builtin-dns

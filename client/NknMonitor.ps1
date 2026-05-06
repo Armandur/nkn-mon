@@ -66,6 +66,10 @@ param(
 $ErrorActionPreference = "Stop"
 $CoordinatorUrl = $CoordinatorUrl.TrimEnd("/")
 
+# Warmup: ladda DnsClient-modulen i förväg så att första Resolve-DnsName i
+# mätloopen inte beskattas av modulladdning (~1 sekund i kalla körningar).
+Import-Module DnsClient -ErrorAction SilentlyContinue | Out-Null
+
 function Write-NknLog {
     param([string]$Level, [string]$Message)
     $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -393,9 +397,20 @@ while ($true) {
             $spec = Get-Spec -Token $config.client_token
             $supportedTypes = @("icmp_ping", "tcp_ping", "dns_query", "http_get")
             $specMeasurements = @($spec.measurements | Where-Object { $supportedTypes -contains $_.type })
-            $specCacheUntil = (Get-Date).AddMinutes(10)
+
+            # Respektera coordinatorns valid_until så config-ändringar plockas upp
+            # snabbt. Fallback till 2 min om fältet saknas eller inte kan parsas.
+            $newCacheUntil = $null
+            if ($spec.PSObject.Properties["valid_until"] -and $spec.valid_until) {
+                try { $newCacheUntil = [DateTime]::Parse($spec.valid_until).ToLocalTime() } catch {}
+            }
+            if (-not $newCacheUntil -or $newCacheUntil -le (Get-Date)) {
+                $newCacheUntil = (Get-Date).AddMinutes(2)
+            }
+            $specCacheUntil = $newCacheUntil
+
             $byType = $specMeasurements | Group-Object type | ForEach-Object { "$($_.Count) $($_.Name)" }
-            Write-NknLog "INFO" "Spec hämtad: $($specMeasurements.Count) mål ($($byType -join ', '))"
+            Write-NknLog "INFO" "Spec hämtad: $($specMeasurements.Count) mål ($($byType -join ', ')), giltig till $($specCacheUntil.ToString('HH:mm:ss'))"
         } catch {
             Write-NknLog "WARN" "Spec-hämtning misslyckades: $_"
         }
