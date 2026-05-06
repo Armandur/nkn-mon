@@ -9,19 +9,35 @@ Se [`SPECIFICATION.md`](./SPECIFICATION.md) för fullständig design.
 
 ## Status
 
-**Iteration 2 leverans 1:** centralt konfigställe + första PowerShell-klienten.
+Iteration 1-3 klara. Iteration 4 till stor del klar (anchor + traceroute).
+Iteration 5 påbörjad (single-image för Unraid, GitHub Actions, GDPR-doc).
+Klienten är på v0.4 med fullt mätstöd.
 
-- [x] Coordinator (`/healthz`, `/probe/register`, `/probe/spec`, `/probe/results`)
-- [x] Centralt config-yaml för registreringsnycklar och builtin-mått
-- [x] Admin-UI på `/admin/` med YAML-editor och hot-reload
-- [x] SQLite för probe-registrering, unik bearer-token per probe (SHA-256-hashad)
-- [x] PowerShell-klient v0.1 (`client/NknMonitor.ps1`) – icmp_ping, interaktiv registrering
-- [x] Mock-klient hämtar spec dynamiskt
-- [x] VictoriaMetrics + Grafana
-- [ ] tcp_ping / dns_query / http_get i klienten (leverans 2)
-- [ ] Heartbeat + network context check + NKN-klassificering (leverans 2)
-- [ ] Lokal SQLite-buffring i klienten vid offline (leverans 2)
-- [ ] Peer-mätning (Iteration 3)
+| Område | Status |
+|--------|--------|
+| Coordinator (`/healthz`, `/probe/register`, `/probe/spec`, `/probe/heartbeat`, `/probe/results`) | ✅ |
+| Centralt config-yaml + admin-UI med formulär OCH rå-YAML-tab | ✅ |
+| Hot-reload av config (formulär eller YAML) | ✅ |
+| SQLite: probes, traceroute-paths med rolling retention | ✅ |
+| Bearer-tokens per probe (SHA-256, klartext bara hos klient) | ✅ |
+| 401-handling i klient: re-registrerar automatiskt | ✅ |
+| **Mättyper i klient:** icmp_ping, tcp_ping, dns_query, http_get, traceroute | ✅ |
+| Per-mått-intervall (klienten respekterar `interval_seconds` i specen) | ✅ |
+| Heartbeat + network context check (lokala IP, gateway, DNS, canaries, host-info) | ✅ |
+| NKN-klassificering (publik IP mot konfigurerade ranges) | ✅ |
+| Lokal JSONL-buffring i klienten vid offline (7 d retention) | ✅ |
+| **Peer-mätning** med subnet-uteslutning + daglig rotation, anchors prioriteras | ✅ |
+| **Reverse-DNS för traceroute-hops** i klientens nät | ✅ |
+| Sju Grafana-dashboards: översikt, site-detalj, latency-matris, tystnande probes, SLA, peer-graf, traceroute-graf | ✅ |
+| Admin-UI: probes-tabell, role-väljare (probe/anchor), sweep, traceroute-historik | ✅ |
+| Single-image (`Dockerfile`) för Unraid med s6-overlay | ✅ |
+| GitHub Actions bygger till `ghcr.io/armandur/nkn-mon` | ✅ |
+| GDPR-dokumentation | ✅ |
+| iperf3-stöd (Iteration 4) | ⏳ |
+| User-defined mätningar per probe (Iteration 4) | ⏳ |
+| OIDC-login mot SVK IDP (Iteration 5) | ⏳ |
+| Authenticode-signering av klient (Iteration 5) | ⏳ |
+| Klient-uppdateringsmekanism via heartbeat (Iteration 5) | ⏳ |
 
 ## Snabbstart (utvecklingsmiljö)
 
@@ -32,9 +48,12 @@ Hela serversidan körs som en docker-compose-stack på en Linux-host (i nuläget
 # Bara serversidan
 docker compose up -d --build
 
-# Med 5 simulerade probes som genererar testdata
+# Med 15 simulerade probes som genererar testdata (default MOCK_PROBES=15)
 docker compose --profile mock up -d --build
 ```
+
+För deployment på Unraid eller annan host: använd single-image
+(`Dockerfile`) – se [`docs/unraid-deployment.md`](./docs/unraid-deployment.md).
 
 Verifiera:
 
@@ -59,8 +78,12 @@ ligger under mappen *NKN-Monitor*.
 ### Admin-UI
 
 http://ubuntu-ai:8200/admin/ – HTTP Basic auth (`ADMIN_USER` / `ADMIN_TOKEN`,
-default `admin` / `admin-dev`). YAML-editor med hot-reload när du klickar Spara
-eller trycker Ctrl+S. Statspanel visar antal probes, mått och senaste reload.
+default `admin` / `admin-dev`). Innehåller:
+
+- **Konfiguration** – formulär-UI eller rå YAML, hot-reload vid spara (Ctrl+S)
+- **Status** – antal probes, mått, registreringsnycklar, senaste reload
+- **Registrerade probes** – tabell med klassificering, lokal IP, heartbeat-ålder, role-dropdown (probe/anchor), sweep av döda
+- **Senaste traceroute** – par av (probe, mål) med klickbar drop-down för hop-historik
 
 > Admin-UI får aldrig exponeras publikt utan att `ADMIN_TOKEN` bytts ut.
 > Default-token loggar varning vid uppstart.

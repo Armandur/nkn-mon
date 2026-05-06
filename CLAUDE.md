@@ -11,29 +11,45 @@ i VictoriaMetrics och visas i Grafana. Inspirerat av RIPE Atlas.
 
 ## Status
 
-**Iteration 2 leverans 1.** Centralt config (`coordinator/config.yaml`),
-admin-UI med hot-reload, SQLite för probe-registrering, första PowerShell-
-klient med icmp_ping. Mock-klienten hämtar spec dynamiskt. Återstår i
-leverans 2: övriga mättyper i klienten (tcp/dns/http), heartbeat + network
-context check, NKN-klassificering, lokal buffring i klienten.
+Iteration 1-3 klara, Iteration 4 till största delen klar
+(anchor-stöd ✅, traceroute med reverse-DNS ✅; iperf3 ❌,
+user-defined per probe ❌). Iteration 5 påbörjad: single-image
+för Unraid, GitHub Actions till ghcr, GDPR-dokumentation. Klienten
+är på v0.4 med samtliga mättyper, heartbeat, NKN-klassificering,
+401-handling, lokal JSONL-buffring och per-mått-intervall.
+
+Sju Grafana-dashboards levererade: översikt, site-detalj,
+latency-matris, tystnande probes, SLA, peer-graf och traceroute-graf.
 
 ## Stack
 
 - **Coordinator:** Python 3.12 + FastAPI + httpx + PyYAML, `pyproject.toml`,
-  `uv`-baserad install. Multi-stage Dockerfile (`dev` / `production`).
+  `uv`-baserad install. Multi-stage Dockerfile (`dev` / `production`) i
+  `coordinator/Dockerfile` för dev-compose. Single-image i repo-rotens
+  `Dockerfile` för Unraid-deployment (med s6-overlay).
 - **Tidsseriedata:** VictoriaMetrics (single-node, flagga
   `--influxSkipSingleField`). Skrivs via Influx line protocol mot `/write`.
-- **Metadata-DB:** SQLite på coordinator (`/app/data/coordinator.db` i container,
-  named volume `coordinator-data`). Bara `probes`-tabellen i Iteration 2.
-- **Config:** `coordinator/config.yaml` mountad in skrivbart. Editeras via
-  `/admin/`-UI med hot-reload eller direkt på disk + omstart.
-- **Visualisering:** Grafana med provisionerade datakällor och dashboards.
-- **Mock-klient:** Python + httpx, hämtar spec, simulerar N probes
-  (`normal`, `degraded`, `offline-bursts`).
-- **Riktig klient:** PowerShell (`client/NknMonitor.ps1`), körs på Windows-host.
-  v0.1 stöder bara icmp_ping; interaktiv registrering med default-värden från
-  hostname.
-- **Reverse proxy / TLS:** Caddy i `docker-compose.prod.yml`.
+  Exponeras aldrig publikt - bara coordinator pratar med den.
+- **Metadata-DB:** SQLite på coordinator (`/data/coordinator.db` i single-image).
+  Tabeller: `probes`, `traceroute_paths` (rolling retention 50 per par).
+- **Config:** `coordinator/config.yaml` (eller `/data/config.yaml` i single-image).
+  Editeras via `/admin/`-UI med formulär ELLER rå YAML, hot-reload via
+  PUT `/admin/api/config[.json]`.
+- **Visualisering:** Grafana 11 med provisionerade datakällor (VictoriaMetrics
+  + Coordinator-Graph via yesoreyeram-infinity-datasource för Node Graph-paneler).
+  Sju dashboards i `grafana/dashboards/`.
+- **Mock-klient:** Python + httpx, simulerar 15 probes som heartbeatar med
+  fake publika IP:n inom NKN-range. Stöder icmp_ping + traceroute
+  (med simulerade hostnames för hops).
+- **Riktig klient:** PowerShell v0.4 (`client/NknMonitor.ps1`) på Windows-host.
+  Alla mättyper, heartbeat, network context check, NKN-klassificering,
+  per-mått-intervall, 401-handling, lokal JSONL-buffring, reverse-DNS
+  för traceroute-hops i klientens nät.
+- **Reverse proxy / TLS:** Caddy i `docker-compose.prod.yml` för Hetzner-prod.
+  För Unraid-pilot: använd befintlig nginx-proxy-manager (se
+  `docs/unraid-deployment.md`).
+- **Image-distribution:** GitHub Actions bygger single-image till
+  `ghcr.io/armandur/nkn-mon` vid push till main + tag-push.
 
 ## Filstruktur
 
@@ -41,54 +57,82 @@ context check, NKN-klassificering, lokal buffring i klienten.
 nkn-mon/
 ├── README.md
 ├── SPECIFICATION.md
+├── todo.md                     # roadmap + småfixar
+├── Dockerfile                  # single-image för Unraid (s6-overlay)
 ├── docker-compose.yml          # dev-stack + mock-profile
 ├── docker-compose.prod.yml     # prod-overrides (Caddy, restart-policies, env)
 ├── .env.example
+├── .github/workflows/
+│   └── build-image.yml         # bygger single-image -> ghcr.io
+├── docker/s6-overlay/          # cont-init + s6-rc.d-services för single-image
+├── docs/
+│   ├── gdpr.md                 # behandling av personuppgifter
+│   └── unraid-deployment.md    # Unraid-template, NPM-konfig
 ├── coordinator/
-│   ├── Dockerfile              # multi-stage: dev + production
+│   ├── Dockerfile              # dev-compose multi-stage
 │   ├── pyproject.toml
-│   ├── config.yaml             # centralt konfigställe (mountas in skrivbart)
+│   ├── config.yaml             # default config (kopieras till /data/ vid första start)
 │   └── src/
-│       ├── main.py             # FastAPI-app, /probe/*-endpoints, modeller
+│       ├── main.py             # FastAPI-app, /probe/*-endpoints, MeasurementResult
 │       ├── config.py           # YAML-loader -> CoordinatorConfig
-│       ├── vm.py               # VictoriaMetrics-skrivning (Influx line protocol)
+│       ├── vm.py               # VictoriaMetrics-skrivning + heartbeat-metrics
+│       ├── classification.py   # publik IP -> nkn/external/unknown
+│       ├── peers.py            # peer-tilldelning med subnet-uteslutning + rotation
 │       ├── api/
-│       │   └── admin.py        # /admin/-UI och /admin/api/* (hot-reload)
+│       │   └── admin.py        # /admin/-UI (formulär+YAML), /admin/api/*
 │       └── storage/
-│           └── sqlite.py       # probes-tabell, token-hash, registrering
+│           └── sqlite.py       # probes + traceroute_paths
 ├── mock-client/
 │   ├── Dockerfile
-│   └── mock_probe.py           # hämtar spec, simulerar icmp_ping
+│   └── mock_probe.py           # heartbeat + simulerade traceroute-paths
 ├── client/
-│   ├── NknMonitor.ps1          # PowerShell-klient v0.1 (Windows-host)
+│   ├── NknMonitor.ps1          # v0.4: alla mättyper, heartbeat, buffer, traceroute+DNS
 │   └── README.md
 ├── scripts/
 │   └── sync-to-vmworkspace.sh  # speglar repo till /mnt/vmworkspace/nkn-mon
 ├── grafana/
 │   ├── provisioning/
-│   │   ├── datasources/victoriametrics.yml
+│   │   ├── datasources/
+│   │   │   ├── victoriametrics.yml
+│   │   │   └── coordinator-graph.yml   # Infinity-plugin för Node Graph
 │   │   └── dashboards/default.yml
-│   └── dashboards/overview.json
+│   └── dashboards/             # sju dashboards (overview, site-detail, peer-graph, ...)
 └── caddy/                      # placeholder för prod-Caddyfile
 ```
 
 ## Designbeslut värda att minnas
 
-- **Port 8200 på hosten** mappar coordinatorns container-port 8000. Anledningen
-  är att 8000 var upptagen på `ubuntu-ai`. Klienter anropar
-  `http://ubuntu-ai:8200` över Tailscale i dev.
-- **SQLite från Iteration 2.** Probes registreras i en lokal SQLite-fil.
-  Bearer-tokens slumpgenereras per probe och lagras som SHA-256-hash. Klartext
-  finns bara hos klienten.
-- **Admin-UI med hot-reload.** `/admin/` är HTTP Basic-skyddad (default
-  `admin/admin-dev`, byt vid extern exponering). Spara i UI:t skriver YAML
-  direkt till disk + uppdaterar `app.state.config`. Bind-mount tillåter inte
-  rename(2), så `tmp + replace` undveks medvetet i `api/admin.py`.
+- **Port 8200 på hosten** mappar coordinatorns container-port 8000 i
+  dev-compose. Anledningen är att 8000 var upptagen på `ubuntu-ai`.
+  I single-image-deployment används användarens egna port-mappningar.
+- **SQLite för coordinator-state.** Tabeller: `probes`, `traceroute_paths`.
+  Bearer-tokens slumpgenereras per probe och lagras som SHA-256-hash;
+  klartext finns bara hos klienten. Migration via `_MIGRATIONS`-lista i
+  `Storage.__init__`.
+- **VictoriaMetrics exponeras aldrig publikt.** `/write` saknar auth – om
+  port 8428 nås från utsidan kan vem som helst skriva metric-data. I
+  single-image lyssnar VM bara på 127.0.0.1, ingen port-exponering.
+- **Admin-UI med formulär OCH rå YAML.** `/admin/` har två tabbar.
+  Formulär-fliken serialiserar via `/admin/api/config.json` (parsar
+  CoordinatorConfig), rå-YAML-fliken bevarar kommentarer via
+  `/admin/api/config`. Bind-mount tillåter inte rename(2), så
+  `tmp + replace` undveks medvetet.
+- **NKN-klassificering på coordinator-sidan.** Klienten rapporterar
+  publik IP, coordinator matchar mot `nkn_public_ip_ranges` i config.
+  Klienten avgör inte själv om den är på NKN.
+- **Klienten gör reverse-DNS.** Coordinator kan ligga externt (Hetzner)
+  och saknar då tillgång till interna NKN-DNS. Klienten i sitt eget nät
+  slår upp PTR-records och skickar `traceroute_path_hosts` parallellt
+  med IP-arrayen.
 - **Ingen passiv data, ingen lyssnande klient.** Klienten initierar all trafik
   utgående. Detta är en grundprincip från Atlas-modellen.
 - **Sanering före Grafana.** Tag-värden eskapas i `vm.py` innan de skrivs till
   VictoriaMetrics – `=`, `,`, mellanslag i tag-värden får `\`-prefix. Ny
   fält-validering måste passera samma rutin.
+- **Peer-mätning via subnet-uteslutning.** `assign_peers` filtrerar
+  bort probes på samma /24 (= samma site), inkluderar alltid anchors,
+  roterar resten med deterministisk hash av (probe_id + datum) så
+  alla probes inte byter peers samma dag.
 
 ## Vanliga ändringar
 
@@ -113,7 +157,7 @@ nkn-mon/
 | `LOG_LEVEL`           | `INFO`                       |                                     |
 | `COORDINATOR_URL`     | `http://coordinator:8000`    | Mock-klient → coordinator           |
 | `REGISTRATION_KEY`    | `dev-registration-key`       | Mock-klient & PowerShell-klient     |
-| `MOCK_PROBES`         | `5`                          | Antal simulerade probes             |
+| `MOCK_PROBES`         | `15`                         | Antal simulerade probes             |
 | `MOCK_INTERVAL_SECONDS` | `30`                       | Sekunder mellan rapporter           |
 | `MOCK_SCENARIO`       | `normal`                     | `normal` / `degraded` / `offline-bursts` |
 

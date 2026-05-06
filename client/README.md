@@ -72,4 +72,10 @@ Notera dessa om du hittar dem:
 
 - `Test-Connection`-property heter olika i PS 5.1 (`ResponseTime`) och PS 7
   (`Latency`). Skriptet hanterar båda men har inte regressionstestats brett.
-- Ingen retry-logik vid HTTP-fel (kommer i v0.2).
+- `Invoke-RestMethod` på PS 5.1 skickar default i ISO-8859-1 vilket bryter
+  FastAPI:s JSON-parser. Wrappen `Invoke-NknJson` konverterar till UTF-8-bytes
+  med explicit `charset=utf-8` så det funkar för båda PS-versioner.
+- DnsClient-modulen förladdas vid skriptstart (`Import-Module DnsClient`)
+  så första `Resolve-DnsName`-anropet inte beskattas av ~1 sek modulladdning.
+- Buffer-fil sparas under `%LOCALAPPDATA%\NKN-Monitor\buffer.jsonl` – pathen
+  loggas vid uppstart för diagnostik.
