@@ -46,7 +46,7 @@
         "justifyMode": "center"
       },
       "targets": [
-        {"expr": "count by (classification) (nkn_probe_up)", "legendFormat": "{{classification}}", "refId": "A", "instant": true}
+        {"expr": "count by (classification) (last_over_time(nkn_probe_up[15m]))", "legendFormat": "{{classification}}", "refId": "A", "instant": true}
       ],
       "title": "Aktiva probes per klassificering",
       "type": "stat"
@@ -124,7 +124,7 @@
       "id": 3,
       "options": {"colorMode": "background", "orientation": "auto", "textMode": "auto"},
       "targets": [
-        {"expr": "nkn_ping_success", "legendFormat": "{{site}} -> {{target}}", "refId": "A", "instant": true}
+        {"expr": "last_over_time(nkn_ping_success[10m])", "legendFormat": "{{site}} -> {{target}}", "refId": "A", "instant": true}
       ],
       "title": "Senaste icmp-status",
       "type": "stat"
@@ -221,7 +221,7 @@
       "id": 7,
       "options": {"colorMode": "background", "orientation": "auto", "textMode": "auto"},
       "targets": [
-        {"expr": "nkn_http_status", "legendFormat": "{{site}} -> {{measurement_id}}", "refId": "A", "instant": true}
+        {"expr": "last_over_time(nkn_http_status[15m])", "legendFormat": "{{site}} -> {{measurement_id}}", "refId": "A", "instant": true}
       ],
       "title": "Senaste HTTP-status",
       "type": "stat"
@@ -269,7 +269,7 @@
       "id": 9,
       "options": {"colorMode": "background", "orientation": "auto", "textMode": "value_and_name"},
       "targets": [
-        {"expr": "nkn_canary_reachable", "legendFormat": "{{site}} -> {{target}}", "refId": "A", "instant": true}
+        {"expr": "last_over_time(nkn_canary_reachable[15m])", "legendFormat": "{{site}} -> {{target}}", "refId": "A", "instant": true}
       ],
       "title": "Canary-reachability (senaste)",
       "type": "stat"
@@ -284,6 +284,6 @@
   "timezone": "browser",
   "title": "NKN-Monitor – översikt",
   "uid": "nkn-overview",
-  "version": 3,
+  "version": 4,
   "weekStart": ""
 }
