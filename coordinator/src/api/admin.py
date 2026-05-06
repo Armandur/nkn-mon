@@ -373,8 +373,32 @@ def list_traceroute_graph_probes(request: Request, _: str = Depends(require_admi
     return sorted(seen.values(), key=lambda p: p["title"].lower())
 
 
+async def _enrich_with_hostnames(request: Request, nodes: dict) -> None:
+    """Slår upp reverse-DNS för hop-noder och fyller in title/mainstat.
+
+    Hop-noder börjar med id='hop:<ip>'. Om PTR-record finns, sätter vi
+    title=hostname och mainstat=ip; annars behålls befintliga värden.
+    """
+    cache = getattr(request.app.state, "dns_cache", None)
+    if cache is None:
+        return
+    ips = [n["title"] for nid, n in nodes.items()
+           if nid.startswith("hop:") and n.get("subtitle") in ("hop", "dest")]
+    if not ips:
+        return
+    resolved = await cache.get_many(ips)
+    for nid, n in nodes.items():
+        if not nid.startswith("hop:"):
+            continue
+        ip = n["title"]
+        host = resolved.get(ip)
+        if host:
+            n["title"] = host
+            n["mainstat"] = ip
+
+
 @router.get("/api/traceroute-graph/nodes")
-def get_traceroute_graph_nodes(
+async def get_traceroute_graph_nodes(
     request: Request,
     client_id: str = "",
     _: str = Depends(require_admin),
@@ -382,6 +406,7 @@ def get_traceroute_graph_nodes(
     nodes, _ = _build_traceroute_graph(
         request.app.state.storage, client_filter=_parse_client_filter(client_id)
     )
+    await _enrich_with_hostnames(request, nodes)
     return list(nodes.values())
 
 
@@ -405,7 +430,7 @@ def list_traceroutes(request: Request, _: str = Depends(require_admin)) -> dict:
 
 
 @router.get("/api/traceroute/{client_id}/{measurement_id}")
-def get_traceroute_history(
+async def get_traceroute_history(
     client_id: str,
     measurement_id: str,
     request: Request,
@@ -413,6 +438,13 @@ def get_traceroute_history(
     _: str = Depends(require_admin),
 ) -> dict:
     paths = request.app.state.storage.get_traceroute_paths(client_id, measurement_id, limit=limit)
+    cache = getattr(request.app.state, "dns_cache", None)
+    if cache is not None and paths:
+        all_ips = {ip for p in paths for ip in (p.get("path") or [])}
+        if all_ips:
+            resolved = await cache.get_many(list(all_ips))
+            for p in paths:
+                p["path_hosts"] = [resolved.get(ip) for ip in (p.get("path") or [])]
     return {
         "client_id": client_id,
         "measurement_id": measurement_id,
@@ -860,9 +892,15 @@ async function toggleTracerouteDetail(row) {
 function renderTracerouteDetail(paths) {
   if (!paths || !paths.length) return '<div class="tr-detail muted">Ingen historik</div>';
   const latest = paths[0];
-  const hops = (latest.path || []).map((ip, i) =>
-    `<div class="tr-hop"><span class="tr-hop-num">${i+1}.</span><span class="tr-hop-ip">${escapeHtml(ip)}</span></div>`
-  ).join("");
+  const path = latest.path || [];
+  const hosts = latest.path_hosts || [];
+  const hops = path.map((ip, i) => {
+    const host = hosts[i];
+    const hostHtml = host
+      ? `<span class="tr-hop-ip">${escapeHtml(host)}</span> <span class="muted">(${escapeHtml(ip)})</span>`
+      : `<span class="tr-hop-ip">${escapeHtml(ip)}</span>`;
+    return `<div class="tr-hop"><span class="tr-hop-num">${i+1}.</span>${hostHtml}</div>`;
+  }).join("");
   let history = "";
   if (paths.length > 1) {
     const lines = paths.slice(0, 20).map(p => {

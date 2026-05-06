@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from .api.admin import router as admin_router
 from .classification import classify_public_ip
 from .config import CoordinatorConfig, load_config
+from .dns_cache import HostnameCache
 from .peers import assign_peers
 from .storage.sqlite import Probe, Storage, generate_token, open_storage
 from .vm import build_heartbeat_lines, build_lines, write_to_vm
@@ -38,6 +39,7 @@ async def lifespan(app: FastAPI):
     app.state.http = httpx.AsyncClient(timeout=10.0)
     app.state.config = load_config()
     app.state.storage = open_storage()
+    app.state.dns_cache = HostnameCache()
     logger.info(
         "Coordinator startar, VM_URL=%s, %d builtin-mått, %d registrerade probes",
         VM_URL,
