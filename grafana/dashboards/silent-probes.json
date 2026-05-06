@@ -1,0 +1,136 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 600},
+              {"color": "red", "value": 3600}
+            ]
+          },
+          "custom": {
+            "align": "right",
+            "cellOptions": {"type": "color-background", "mode": "basic"}
+          },
+          "unit": "s"
+        },
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "site"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "auto"}}, {"id": "color", "value": {"mode": "fixed", "fixedColor": "text"}}, {"id": "unit", "value": "string"}, {"id": "custom.align", "value": "left"}]},
+          {"matcher": {"id": "byName", "options": "client_id"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "auto"}}, {"id": "color", "value": {"mode": "fixed", "fixedColor": "text"}}, {"id": "unit", "value": "string"}, {"id": "custom.align", "value": "left"}]},
+          {"matcher": {"id": "byName", "options": "classification"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "auto"}}, {"id": "color", "value": {"mode": "fixed", "fixedColor": "text"}}, {"id": "unit", "value": "string"}, {"id": "custom.align", "value": "left"}]}
+        ]
+      },
+      "gridPos": {"h": 14, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {
+        "showHeader": true,
+        "sortBy": [{"displayName": "Sekunder sedan heartbeat", "desc": true}]
+      },
+      "targets": [
+        {
+          "expr": "time() - timestamp(last_over_time(nkn_probe_up[6h]))",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Probes sorterade efter ålder på senaste heartbeat",
+      "description": "Gult >10 min, rött >1 h. Probes som inte rapporterat på 6 h faller bort helt och syns inte (VictoriaMetrics-staleness).",
+      "type": "table",
+      "transformations": [
+        {"id": "organize", "options": {
+          "excludeByName": {"Time": true, "__name__": true, "target_category": true},
+          "renameByName": {"Value": "Sekunder sedan heartbeat"}
+        }}
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "green", "value": 1}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 4, "w": 8, "x": 0, "y": 14},
+      "id": 2,
+      "options": {"colorMode": "background", "orientation": "auto", "textMode": "value_and_name"},
+      "targets": [
+        {"expr": "count(time() - timestamp(last_over_time(nkn_probe_up[6h])) < 600)", "legendFormat": "Friska (heartbeat < 10 min)", "refId": "A", "instant": true}
+      ],
+      "title": "Friska probes",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 1}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 4, "w": 8, "x": 8, "y": 14},
+      "id": 3,
+      "options": {"colorMode": "background", "orientation": "auto", "textMode": "value_and_name"},
+      "targets": [
+        {"expr": "count((time() - timestamp(last_over_time(nkn_probe_up[6h])) >= 600) and (time() - timestamp(last_over_time(nkn_probe_up[6h])) < 3600))", "legendFormat": "Sega (10-60 min)", "refId": "A", "instant": true}
+      ],
+      "title": "Sega probes",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "red", "value": 1}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 4, "w": 8, "x": 16, "y": 14},
+      "id": 4,
+      "options": {"colorMode": "background", "orientation": "auto", "textMode": "value_and_name"},
+      "targets": [
+        {"expr": "count(time() - timestamp(last_over_time(nkn_probe_up[6h])) >= 3600)", "legendFormat": "Tystnande (>1 h)", "refId": "A", "instant": true}
+      ],
+      "title": "Tystnande probes",
+      "type": "stat"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["nkn", "ops"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timezone": "browser",
+  "title": "NKN-Monitor – tystnande probes",
+  "uid": "nkn-silent-probes",
+  "version": 1
+}

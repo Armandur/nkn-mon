@@ -1,0 +1,117 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 30},
+              {"color": "orange", "value": 80},
+              {"color": "red", "value": 200}
+            ]
+          },
+          "custom": {
+            "align": "right",
+            "cellOptions": {"type": "color-background", "mode": "gradient"},
+            "displayMode": "gradient-gauge"
+          },
+          "unit": "ms"
+        },
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "site"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "color-text"}}, {"id": "color", "value": {"mode": "fixed", "fixedColor": "text"}}, {"id": "unit", "value": "string"}, {"id": "custom.align", "value": "left"}]},
+          {"matcher": {"id": "byName", "options": "target"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "color-text"}}, {"id": "color", "value": {"mode": "fixed", "fixedColor": "text"}}, {"id": "unit", "value": "string"}, {"id": "custom.align", "value": "left"}]}
+        ]
+      },
+      "gridPos": {"h": 12, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {
+        "showHeader": true,
+        "sortBy": [{"displayName": "RTT (ms)", "desc": true}]
+      },
+      "targets": [
+        {
+          "expr": "avg by (site, target) (last_over_time(nkn_ping_rtt_ms[5m]))",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "ICMP RTT – matrisvy (senaste 5 min)",
+      "type": "table",
+      "transformations": [
+        {"id": "organize", "options": {
+          "excludeByName": {"Time": true, "Value": false},
+          "renameByName": {"Value": "RTT (ms)"}
+        }}
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 1},
+              {"color": "orange", "value": 5},
+              {"color": "red", "value": 10}
+            ]
+          },
+          "custom": {
+            "align": "right",
+            "cellOptions": {"type": "color-background", "mode": "gradient"}
+          },
+          "unit": "percent",
+          "max": 100,
+          "min": 0
+        },
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "site"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "color-text"}}, {"id": "color", "value": {"mode": "fixed", "fixedColor": "text"}}, {"id": "unit", "value": "string"}, {"id": "custom.align", "value": "left"}]},
+          {"matcher": {"id": "byName", "options": "target"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "color-text"}}, {"id": "color", "value": {"mode": "fixed", "fixedColor": "text"}}, {"id": "unit", "value": "string"}, {"id": "custom.align", "value": "left"}]}
+        ]
+      },
+      "gridPos": {"h": 12, "w": 24, "x": 0, "y": 12},
+      "id": 2,
+      "options": {
+        "showHeader": true,
+        "sortBy": [{"displayName": "Loss %", "desc": true}]
+      },
+      "targets": [
+        {
+          "expr": "avg by (site, target) (avg_over_time(nkn_ping_loss_pct[15m]))",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Paketförlust – matrisvy (medel senaste 15 min)",
+      "type": "table",
+      "transformations": [
+        {"id": "organize", "options": {
+          "excludeByName": {"Time": true},
+          "renameByName": {"Value": "Loss %"}
+        }}
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["nkn", "heatmap"],
+  "templating": {"list": []},
+  "time": {"from": "now-15m", "to": "now"},
+  "timezone": "browser",
+  "title": "NKN-Monitor – latency-matris",
+  "uid": "nkn-latency-heatmap",
+  "version": 1
+}

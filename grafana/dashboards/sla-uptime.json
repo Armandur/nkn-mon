@@ -1,0 +1,151 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "orange", "value": 95},
+              {"color": "yellow", "value": 99},
+              {"color": "green", "value": 99.5}
+            ]
+          },
+          "custom": {
+            "align": "right",
+            "cellOptions": {"type": "color-background", "mode": "gradient"}
+          },
+          "unit": "percent",
+          "decimals": 2,
+          "min": 0,
+          "max": 100
+        },
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "site"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "auto"}}, {"id": "color", "value": {"mode": "fixed", "fixedColor": "text"}}, {"id": "unit", "value": "string"}, {"id": "custom.align", "value": "left"}]},
+          {"matcher": {"id": "byName", "options": "target"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "auto"}}, {"id": "color", "value": {"mode": "fixed", "fixedColor": "text"}}, {"id": "unit", "value": "string"}, {"id": "custom.align", "value": "left"}]}
+        ]
+      },
+      "gridPos": {"h": 12, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {
+        "showHeader": true,
+        "sortBy": [{"displayName": "7d", "desc": false}]
+      },
+      "targets": [
+        {"expr": "avg by (site, target) (avg_over_time(nkn_ping_success[1h])) * 100", "format": "table", "instant": true, "refId": "A"},
+        {"expr": "avg by (site, target) (avg_over_time(nkn_ping_success[24h])) * 100", "format": "table", "instant": true, "refId": "B"},
+        {"expr": "avg by (site, target) (avg_over_time(nkn_ping_success[7d])) * 100", "format": "table", "instant": true, "refId": "C"}
+      ],
+      "title": "ICMP-uptime per probe × target",
+      "type": "table",
+      "transformations": [
+        {"id": "merge", "options": {}},
+        {"id": "organize", "options": {
+          "excludeByName": {"Time": true, "Time 1": true, "Time 2": true, "Time 3": true},
+          "renameByName": {
+            "Value #A": "1h",
+            "Value #B": "24h",
+            "Value #C": "7d"
+          }
+        }}
+      ]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 5, "pointSize": 4, "showPoints": "auto", "spanNulls": true},
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        }
+      },
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 12},
+      "id": 2,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "avg_over_time(nkn_ping_success[15m]) * 100", "legendFormat": "{{site}} -> {{target}}", "refId": "A"}
+      ],
+      "title": "Rullande 15-min uptime",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 95}, {"color": "green", "value": 99.5}]},
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        }
+      },
+      "gridPos": {"h": 5, "w": 8, "x": 0, "y": 22},
+      "id": 3,
+      "options": {"colorMode": "value", "orientation": "auto", "textMode": "value_and_name", "graphMode": "none"},
+      "targets": [
+        {"expr": "avg(avg_over_time(nkn_ping_success[1h])) * 100", "legendFormat": "ICMP global 1h", "refId": "A", "instant": true}
+      ],
+      "title": "Global ICMP-uptime 1h",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 95}, {"color": "green", "value": 99.5}]},
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        }
+      },
+      "gridPos": {"h": 5, "w": 8, "x": 8, "y": 22},
+      "id": 4,
+      "options": {"colorMode": "value", "orientation": "auto", "textMode": "value_and_name", "graphMode": "none"},
+      "targets": [
+        {"expr": "avg(avg_over_time(nkn_ping_success[24h])) * 100", "legendFormat": "ICMP global 24h", "refId": "A", "instant": true}
+      ],
+      "title": "Global ICMP-uptime 24h",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 95}, {"color": "green", "value": 99.5}]},
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        }
+      },
+      "gridPos": {"h": 5, "w": 8, "x": 16, "y": 22},
+      "id": 5,
+      "options": {"colorMode": "value", "orientation": "auto", "textMode": "value_and_name", "graphMode": "none"},
+      "targets": [
+        {"expr": "avg(avg_over_time(nkn_ping_success[7d])) * 100", "legendFormat": "ICMP global 7d", "refId": "A", "instant": true}
+      ],
+      "title": "Global ICMP-uptime 7d",
+      "type": "stat"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["nkn", "sla"],
+  "templating": {"list": []},
+  "time": {"from": "now-24h", "to": "now"},
+  "timezone": "browser",
+  "title": "NKN-Monitor – SLA / uptime",
+  "uid": "nkn-sla-uptime",
+  "version": 1
+}
