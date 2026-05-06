@@ -280,6 +280,28 @@ async def get_graph_edges(
     return out
 
 
+@router.get("/api/traceroute")
+def list_traceroutes(request: Request, _: str = Depends(require_admin)) -> dict:
+    """Lista alla (probe, mått) som har traceroute-data, med senaste hops/timestamp."""
+    return {"items": request.app.state.storage.list_traceroute_pairs()}
+
+
+@router.get("/api/traceroute/{client_id}/{measurement_id}")
+def get_traceroute_history(
+    client_id: str,
+    measurement_id: str,
+    request: Request,
+    limit: int = 20,
+    _: str = Depends(require_admin),
+) -> dict:
+    paths = request.app.state.storage.get_traceroute_paths(client_id, measurement_id, limit=limit)
+    return {
+        "client_id": client_id,
+        "measurement_id": measurement_id,
+        "paths": paths,
+    }
+
+
 @router.post("/api/probes/{probe_id}/role")
 def set_probe_role(
     probe_id: str,
@@ -430,6 +452,23 @@ _ADMIN_HTML = r"""<!DOCTYPE html>
   .age-fresh { color: var(--success); }
   .age-stale { color: var(--warn); }
   .age-dead { color: var(--error); }
+  .tr-row { cursor: pointer; }
+  .tr-row:hover { background: rgba(255,255,255,0.03); }
+  .tr-detail {
+    background: var(--bg);
+    padding: 12px 16px;
+    font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+    font-size: 12px; line-height: 1.6;
+    border-bottom: 1px solid var(--border);
+  }
+  .tr-hop { display: flex; gap: 12px; }
+  .tr-hop-num { color: var(--muted); width: 24px; text-align: right; }
+  .tr-hop-ip { color: var(--accent); }
+  .tr-history-line {
+    color: var(--muted); font-size: 11px;
+    margin-top: 8px; padding-top: 8px;
+    border-top: 1px dashed var(--border);
+  }
 </style>
 </head>
 <body>
@@ -486,6 +525,24 @@ _ADMIN_HTML = r"""<!DOCTYPE html>
         </tr>
       </thead>
       <tbody id="probes-body"></tbody>
+    </table>
+  </section>
+
+  <section class="card probes-section">
+    <h2>Senaste traceroute</h2>
+    <p class="hint">Klicka på en rad för att se hops och historik (senaste 20 körningar).</p>
+    <table class="probes">
+      <thead>
+        <tr>
+          <th>Site</th>
+          <th>Mätning</th>
+          <th>Mål</th>
+          <th>Hops</th>
+          <th>Total RTT</th>
+          <th>När</th>
+        </tr>
+      </thead>
+      <tbody id="traceroute-body"></tbody>
     </table>
   </section>
 </main>
@@ -635,6 +692,71 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+async function refreshTraceroutes() {
+  const r = await fetch("/admin/api/traceroute");
+  if (!r.ok) return;
+  const data = await r.json();
+  const tbody = document.getElementById("traceroute-body");
+  if (!data.items.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="muted">Inga traceroute-mätningar ännu</td></tr>';
+    return;
+  }
+  tbody.innerHTML = data.items.map(it => {
+    const age = formatAge(it.timestamp);
+    const total = it.total_ms !== null ? `${Math.round(it.total_ms)} ms` : "-";
+    return `<tr class="tr-row" data-client="${escapeHtml(it.client_id)}" data-mid="${escapeHtml(it.measurement_id)}">
+      <td>${escapeHtml(it.site_name) || '<span class="muted">-</span>'}</td>
+      <td class="muted">${escapeHtml(it.measurement_id)}</td>
+      <td>${escapeHtml(it.target) || '<span class="muted">-</span>'}</td>
+      <td>${it.hops ?? '<span class="muted">-</span>'}</td>
+      <td>${total}</td>
+      <td class="${age.cls}">${age.text}</td>
+    </tr>`;
+  }).join("");
+
+  tbody.querySelectorAll(".tr-row").forEach(row => {
+    row.addEventListener("click", () => toggleTracerouteDetail(row));
+  });
+}
+
+async function toggleTracerouteDetail(row) {
+  const next = row.nextElementSibling;
+  if (next && next.classList.contains("tr-detail-row")) {
+    next.remove();
+    return;
+  }
+  const clientId = row.dataset.client;
+  const mid = row.dataset.mid;
+  const r = await fetch(`/admin/api/traceroute/${clientId}/${mid}?limit=20`);
+  if (!r.ok) return;
+  const data = await r.json();
+  const detail = document.createElement("tr");
+  detail.classList.add("tr-detail-row");
+  const td = document.createElement("td");
+  td.colSpan = 6;
+  td.innerHTML = renderTracerouteDetail(data.paths);
+  detail.appendChild(td);
+  row.parentNode.insertBefore(detail, row.nextSibling);
+}
+
+function renderTracerouteDetail(paths) {
+  if (!paths || !paths.length) return '<div class="tr-detail muted">Ingen historik</div>';
+  const latest = paths[0];
+  const hops = (latest.path || []).map((ip, i) =>
+    `<div class="tr-hop"><span class="tr-hop-num">${i+1}.</span><span class="tr-hop-ip">${escapeHtml(ip)}</span></div>`
+  ).join("");
+  let history = "";
+  if (paths.length > 1) {
+    const lines = paths.slice(0, 20).map(p => {
+      const age = formatAge(p.timestamp);
+      const ttl = p.total_ms !== null ? `${Math.round(p.total_ms)}ms` : "-";
+      return `${age.text} - ${p.hops || '?'} hops, ${ttl}`;
+    }).join(" • ");
+    history = `<div class="tr-history-line">Historik: ${lines}</div>`;
+  }
+  return `<div class="tr-detail">${hops}${history}</div>`;
+}
+
 async function sweepDeadProbes() {
   const hours = parseInt(document.getElementById("sweep-hours").value, 10) || 24;
   if (!confirm(`Ta bort probes som inte heartbeatat på ${hours} h?`)) return;
@@ -652,8 +774,10 @@ document.getElementById("sweep-btn").addEventListener("click", sweepDeadProbes);
 
 loadConfig();
 refreshProbes();
+refreshTraceroutes();
 setInterval(refreshStatus, 10000);
 setInterval(refreshProbes, 5000);
+setInterval(refreshTraceroutes, 30000);
 </script>
 </body>
 </html>

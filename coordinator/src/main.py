@@ -366,6 +366,19 @@ async def results(
             logger.exception("VM-skrivning misslyckades")
             raise HTTPException(status_code=502, detail=f"VM-skrivning misslyckades: {exc}") from exc
 
+        # Persistera traceroute-paths till SQLite för historik och route-jämförelse
+        for r in accepted:
+            if r.type == "traceroute" and r.traceroute_path:
+                request.app.state.storage.save_traceroute_path(
+                    client_id=probe.id,
+                    measurement_id=r.measurement_id,
+                    target=r.target,
+                    timestamp=r.timestamp,
+                    path=r.traceroute_path,
+                    hops=r.traceroute_hops,
+                    total_ms=r.traceroute_total_ms,
+                )
+
     request.app.state.storage.touch_heartbeat(probe.id)
 
     return ResultsResponse(

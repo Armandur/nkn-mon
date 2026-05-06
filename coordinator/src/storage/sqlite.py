@@ -33,7 +33,22 @@ CREATE TABLE IF NOT EXISTS probes (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_probes_token_hash ON probes(token_hash);
+
+CREATE TABLE IF NOT EXISTS traceroute_paths (
+    client_id TEXT NOT NULL,
+    measurement_id TEXT NOT NULL,
+    target TEXT,
+    timestamp TEXT NOT NULL,
+    path_json TEXT NOT NULL,
+    hops INTEGER,
+    total_ms REAL,
+    PRIMARY KEY (client_id, measurement_id, timestamp)
+);
+CREATE INDEX IF NOT EXISTS idx_traceroute_lookup
+    ON traceroute_paths(client_id, measurement_id, timestamp DESC);
 """
+
+_TRACEROUTE_RETENTION = 50  # behåll senaste N per (client, measurement)
 
 # Kolumner som kan saknas i äldre databaser (Iteration 2 leverans 1+).
 _MIGRATIONS: list[tuple[str, str]] = [
@@ -192,6 +207,79 @@ class Storage:
             cur = conn.execute("UPDATE probes SET role = ? WHERE id = ?", (role, probe_id))
             conn.commit()
             return cur.rowcount > 0
+
+    def save_traceroute_path(
+        self,
+        client_id: str,
+        measurement_id: str,
+        target: str,
+        timestamp: str,
+        path: list[str],
+        hops: int | None,
+        total_ms: float | None,
+    ) -> None:
+        import json
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO traceroute_paths "
+                "(client_id, measurement_id, target, timestamp, path_json, hops, total_ms) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (client_id, measurement_id, target, timestamp, json.dumps(path), hops, total_ms),
+            )
+            conn.execute(
+                "DELETE FROM traceroute_paths "
+                "WHERE client_id = ? AND measurement_id = ? "
+                "AND timestamp NOT IN ("
+                "  SELECT timestamp FROM traceroute_paths "
+                "  WHERE client_id = ? AND measurement_id = ? "
+                "  ORDER BY timestamp DESC LIMIT ?"
+                ")",
+                (client_id, measurement_id, client_id, measurement_id, _TRACEROUTE_RETENTION),
+            )
+            conn.commit()
+
+    def get_traceroute_paths(
+        self, client_id: str, measurement_id: str, limit: int = 50
+    ) -> list[dict]:
+        import json
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT timestamp, target, path_json, hops, total_ms "
+                "FROM traceroute_paths "
+                "WHERE client_id = ? AND measurement_id = ? "
+                "ORDER BY timestamp DESC LIMIT ?",
+                (client_id, measurement_id, limit),
+            ).fetchall()
+        out = []
+        for r in rows:
+            try:
+                path = json.loads(r["path_json"])
+            except (ValueError, TypeError):
+                path = []
+            out.append({
+                "timestamp": r["timestamp"],
+                "target": r["target"],
+                "path": path,
+                "hops": r["hops"],
+                "total_ms": r["total_ms"],
+            })
+        return out
+
+    def list_traceroute_pairs(self) -> list[dict]:
+        """Returnera alla (client, measurement) med senaste timestamp och hops-count."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT t.client_id, t.measurement_id, t.target, t.timestamp, t.hops, t.total_ms, "
+                "       p.site_name, p.hostname "
+                "FROM traceroute_paths t "
+                "LEFT JOIN probes p ON p.id = t.client_id "
+                "WHERE t.timestamp = ("
+                "  SELECT MAX(timestamp) FROM traceroute_paths "
+                "  WHERE client_id = t.client_id AND measurement_id = t.measurement_id"
+                ") "
+                "ORDER BY p.site_name, t.measurement_id"
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     def delete_dead_probes(self, older_than_hours: int) -> int:
         """Ta bort probes som inte heartbeatat på X timmar.
