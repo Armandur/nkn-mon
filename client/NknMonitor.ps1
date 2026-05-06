@@ -66,6 +66,15 @@ param(
 $ErrorActionPreference = "Stop"
 $CoordinatorUrl = $CoordinatorUrl.TrimEnd("/")
 
+# UTF-8 i alla riktningar:
+# - Konsolens OutputEncoding så svenska tecken visas korrekt i logg
+# - $OutputEncoding så stdin till externa kommandon blir UTF-8
+# - PS 5.1:s default är ofta IBM850/Windows-1252 vilket bryter åäö
+try {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    $OutputEncoding = [System.Text.Encoding]::UTF8
+} catch {}
+
 # Warmup: ladda DnsClient-modulen i förväg så att första Resolve-DnsName i
 # mätloopen inte beskattas av modulladdning (~1 sekund i kalla körningar).
 Import-Module DnsClient -ErrorAction SilentlyContinue | Out-Null
@@ -93,11 +102,18 @@ function Read-LocalConfig {
     return $null
 }
 
+function Write-Utf8NoBom {
+    # PS 5.1:s 'Set-Content -Encoding UTF8' skriver med BOM, vilket bryter
+    # JSONL-parsing av första raden. .NET med UTF8Encoding(false) ger ren UTF-8.
+    param([string]$Path, [string]$Content)
+    [System.IO.File]::WriteAllText($Path, $Content, [System.Text.UTF8Encoding]::new($false))
+}
+
 function Save-LocalConfig {
     param([pscustomobject]$Config)
     $dir = Split-Path -Parent $ConfigPath
     if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
-    $Config | ConvertTo-Json -Depth 10 | Set-Content -Path $ConfigPath -Encoding UTF8
+    Write-Utf8NoBom -Path $ConfigPath -Content ($Config | ConvertTo-Json -Depth 10)
 }
 
 function Read-WithDefault {
@@ -466,7 +482,13 @@ function Save-ResultsToBuffer {
         $dir = Split-Path -Parent $Path
         if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
         $lines = $Results | ForEach-Object { $_ | ConvertTo-Json -Depth 6 -Compress }
-        Add-Content -Path $Path -Value $lines -Encoding UTF8
+        # Append utan BOM via .NET StreamWriter
+        $sw = [System.IO.StreamWriter]::new($Path, $true, [System.Text.UTF8Encoding]::new($false))
+        try {
+            foreach ($l in $lines) { $sw.WriteLine($l) }
+        } finally {
+            $sw.Close()
+        }
         $size = (Get-Item $Path).Length
         Write-NknLog "WARN" "Buffrade $($Results.Count) resultat -> $Path ($size bytes totalt)"
     } catch {
@@ -529,8 +551,12 @@ function Invoke-BufferFlush {
         Remove-Item $Path -ErrorAction SilentlyContinue
         Write-NknLog "INFO" "Buffer flushad: $sent resultat skickade, $expired övergamla rensade"
     } else {
-        $newLines = $remaining | ForEach-Object { $_ | ConvertTo-Json -Depth 6 -Compress }
-        Set-Content -Path $Path -Value $newLines -Encoding UTF8
+        # Atomic rewrite: skriv till .tmp och rename över originalet så vi
+        # aldrig lämnar en halv buffer-fil vid kraschar mid-write.
+        $tmp = "$Path.tmp"
+        $content = ($remaining | ForEach-Object { $_ | ConvertTo-Json -Depth 6 -Compress }) -join "`n"
+        Write-Utf8NoBom -Path $tmp -Content ($content + "`n")
+        Move-Item -Path $tmp -Destination $Path -Force
         Write-NknLog "INFO" "Buffer delvis flushad: $sent skickade, $($remaining.Count) kvar"
     }
 }
