@@ -1,5 +1,5 @@
 ﻿<#
-# Version: 0.6.0
+# Version: 0.6.1
 .SYNOPSIS
     NKN-Monitor probe-klient (PowerShell).
 
@@ -88,7 +88,7 @@ Import-Module DnsClient -ErrorAction SilentlyContinue | Out-Null
 
 $BufferPath = Join-Path (Split-Path -Parent $ConfigPath) "buffer.jsonl"
 $BufferRetentionDays = 7
-$Script:NknClientVersion = "0.6.0"
+$Script:NknClientVersion = "0.6.1"
 
 # Cache av primär lokal IPv4. Uppdateras vid varje heartbeat.
 $Global:NknPrimaryLocalIp = $null
@@ -808,6 +808,8 @@ function Send-Heartbeat {
 }
 
 # --- Huvudloop -------------------------------------------------------------
+
+Write-NknLog "INFO" "NKN-Monitor klient v$Script:NknClientVersion startad"
 
 $config = Read-LocalConfig
 if (-not $config -or -not $config.client_token -or $config.coordinator_url -ne $CoordinatorUrl) {
