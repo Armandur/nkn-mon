@@ -6,49 +6,51 @@
   "liveNow": false,
   "panels": [
     {
-      "datasource": {"type": "marcusolsson-json-datasource", "uid": "coordinator-graph"},
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "coordinator-graph"},
       "fieldConfig": {"defaults": {}, "overrides": []},
       "gridPos": {"h": 22, "w": 24, "x": 0, "y": 0},
       "id": 1,
       "options": {
-        "nodes": {
-          "mainStatUnit": "string",
-          "secondaryStatUnit": "string",
-          "arcs": []
-        },
-        "edges": {
-          "mainStatUnit": "string",
-          "secondaryStatUnit": "string"
-        },
-        "nodeRadius": 40,
-        "layoutAlgorithm": "layered",
+        "nodes": {"mainStatUnit": "string", "secondaryStatUnit": "string"},
+        "edges": {"mainStatUnit": "string", "secondaryStatUnit": "string"},
+        "layoutAlgorithm": "force",
         "zoomMode": "cooperative"
       },
       "targets": [
         {
           "refId": "nodes",
-          "datasource": {"type": "marcusolsson-json-datasource", "uid": "coordinator-graph"},
-          "urlPath": "/admin/api/peer-graph/nodes",
-          "method": "GET",
-          "fields": [
-            {"jsonPath": "$[*].id", "name": "id", "type": "string"},
-            {"jsonPath": "$[*].title", "name": "title", "type": "string"},
-            {"jsonPath": "$[*].subtitle", "name": "subtitle", "type": "string"},
-            {"jsonPath": "$[*].mainstat", "name": "mainstat", "type": "string"},
-            {"jsonPath": "$[*].secondarystat", "name": "secondarystat", "type": "string"},
-            {"jsonPath": "$[*].color", "name": "color", "type": "string"}
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "coordinator-graph"},
+          "type": "json",
+          "source": "url",
+          "url": "/admin/api/peer-graph/nodes",
+          "url_options": {"method": "GET", "data": ""},
+          "format": "table",
+          "parser": "backend",
+          "root_selector": "",
+          "columns": [
+            {"selector": "id", "text": "id", "type": "string"},
+            {"selector": "title", "text": "title", "type": "string"},
+            {"selector": "subtitle", "text": "subtitle", "type": "string"},
+            {"selector": "mainstat", "text": "mainstat", "type": "string"},
+            {"selector": "secondarystat", "text": "secondarystat", "type": "string"},
+            {"selector": "color", "text": "color", "type": "string"}
           ]
         },
         {
           "refId": "edges",
-          "datasource": {"type": "marcusolsson-json-datasource", "uid": "coordinator-graph"},
-          "urlPath": "/admin/api/peer-graph/edges",
-          "method": "GET",
-          "fields": [
-            {"jsonPath": "$[*].id", "name": "id", "type": "string"},
-            {"jsonPath": "$[*].source", "name": "source", "type": "string"},
-            {"jsonPath": "$[*].target", "name": "target", "type": "string"},
-            {"jsonPath": "$[*].mainstat", "name": "mainstat", "type": "string"}
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "coordinator-graph"},
+          "type": "json",
+          "source": "url",
+          "url": "/admin/api/peer-graph/edges",
+          "url_options": {"method": "GET", "data": ""},
+          "format": "table",
+          "parser": "backend",
+          "root_selector": "",
+          "columns": [
+            {"selector": "id", "text": "id", "type": "string"},
+            {"selector": "source", "text": "source", "type": "string"},
+            {"selector": "target", "text": "target", "type": "string"},
+            {"selector": "mainstat", "text": "mainstat", "type": "string"}
           ]
         }
       ],
@@ -64,5 +66,5 @@
   "timezone": "browser",
   "title": "NKN-Monitor – peer-graf",
   "uid": "nkn-peer-graph",
-  "version": 4
+  "version": 5
 }
