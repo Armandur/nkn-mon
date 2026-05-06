@@ -9,14 +9,19 @@ Se [`SPECIFICATION.md`](./SPECIFICATION.md) för fullständig design.
 
 ## Status
 
-**Iteration 1 (PoC):** end-to-end-skelett.
+**Iteration 2 leverans 1:** centralt konfigställe + första PowerShell-klienten.
 
-- [x] Coordinator (`/healthz`, `/probe/register`, `/probe/results`)
-- [x] VictoriaMetrics + Grafana via docker-compose
-- [x] Mock-klient i Python som genererar testdata
-- [x] Grafana-dashboard som visar `nkn_ping_rtt_ms` över tid
-- [ ] Riktig PowerShell-klient (Iteration 2+)
-- [ ] Spec-distribution, peer-mätning, NKN-klassificering
+- [x] Coordinator (`/healthz`, `/probe/register`, `/probe/spec`, `/probe/results`)
+- [x] Centralt config-yaml för registreringsnycklar och builtin-mått
+- [x] Admin-UI på `/admin/` med YAML-editor och hot-reload
+- [x] SQLite för probe-registrering, unik bearer-token per probe (SHA-256-hashad)
+- [x] PowerShell-klient v0.1 (`client/NknMonitor.ps1`) – icmp_ping, interaktiv registrering
+- [x] Mock-klient hämtar spec dynamiskt
+- [x] VictoriaMetrics + Grafana
+- [ ] tcp_ping / dns_query / http_get i klienten (leverans 2)
+- [ ] Heartbeat + network context check + NKN-klassificering (leverans 2)
+- [ ] Lokal SQLite-buffring i klienten vid offline (leverans 2)
+- [ ] Peer-mätning (Iteration 3)
 
 ## Snabbstart (utvecklingsmiljö)
 
@@ -47,9 +52,18 @@ ligger under mappen *NKN-Monitor*.
 
 | Tjänst          | Host-port | Container-port | Anmärkning                       |
 |-----------------|-----------|----------------|----------------------------------|
-| Coordinator     | **8200**  | 8000           | port 8000 var upptagen på hosten |
+| Coordinator     | **8200**  | 8000           | API + admin-UI på `/admin/`      |
 | VictoriaMetrics | 8428      | 8428           | exponeras endast i dev           |
 | Grafana         | 3000      | 3000           |                                  |
+
+### Admin-UI
+
+http://ubuntu-ai:8200/admin/ – HTTP Basic auth (`ADMIN_USER` / `ADMIN_TOKEN`,
+default `admin` / `admin-dev`). YAML-editor med hot-reload när du klickar Spara
+eller trycker Ctrl+S. Statspanel visar antal probes, mått och senaste reload.
+
+> Admin-UI får aldrig exponeras publikt utan att `ADMIN_TOKEN` bytts ut.
+> Default-token loggar varning vid uppstart.
 
 Klienten (riktig eller mock på extern host) anropar coordinatorn på
 `http://<tailscale-host>:8200`. För dev i hemnätet: `http://ubuntu-ai:8200`.
@@ -71,7 +85,7 @@ Antal probes: `MOCK_PROBES` (default 5). Intervall: `MOCK_INTERVAL_SECONDS`
 # Registrera
 TOKEN=$(curl -s -X POST http://localhost:8200/probe/register \
   -H "Content-Type: application/json" \
-  -d '{"registration_key":"dev","client_metadata":{"hostname":"smoke-1","site_name":"Smoketest"}}' \
+  -d '{"registration_key":"dev-registration-key","client_metadata":{"hostname":"smoke-1","site_name":"Smoketest"}}' \
   | jq -r .client_token)
 
 # Skicka ett ping-resultat

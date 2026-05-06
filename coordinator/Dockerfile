@@ -13,7 +13,7 @@ COPY pyproject.toml ./
 RUN uv pip install --system --no-cache -e ".[dev]" || \
     uv pip install --system --no-cache \
       "fastapi>=0.115" "uvicorn[standard]>=0.32" "httpx>=0.27" "pydantic>=2.9" \
-      "pytest>=8" "pytest-asyncio>=0.24" "ruff>=0.7"
+      "pyyaml>=6.0" "pytest>=8" "pytest-asyncio>=0.24" "ruff>=0.7"
 COPY src ./src
 EXPOSE 8000
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

@@ -1,0 +1,60 @@
+# Centralt konfigställe för NKN-Monitor coordinator.
+#
+# Kan editeras direkt på disk eller via admin-UI på /admin/. Hot-reload sker
+# automatiskt när admin-UI sparar; vid manuell editering på disk krävs omstart.
+
+heartbeat_interval_seconds: 300
+spec_validity_seconds: 3600
+
+# Tillåtna registreringsnycklar. Probes använder en av dessa vid första /probe/register.
+# Rotera vid behov; gamla nycklar kan tas bort utan att redan registrerade probes
+# påverkas (de använder sin client_token därefter).
+registration_keys:
+  - dev-registration-key
+
+# Builtin-mål som distribueras till alla probes. id måste vara unikt.
+# Iteration 2: klienten stöder bara type=icmp_ping. Andra typer skickas ut i specen
+# men klienten ignorerar dem tills stöd läggs till.
+builtin_measurements:
+  - id: builtin-ping-ad
+    type: icmp_ping
+    target: ad-1.intern
+    interval_seconds: 60
+    packet_count: 4
+    resolve_on_probe: true
+
+  - id: builtin-ping-gateway
+    type: icmp_ping
+    target: 1.1.1.1
+    interval_seconds: 60
+    packet_count: 4
+    resolve_on_probe: false
+
+  - id: builtin-tcp-smtp
+    type: tcp_ping
+    target: smtp.intern
+    port: 587
+    interval_seconds: 60
+
+  - id: builtin-dns
+    type: dns_query
+    target: 10.0.0.53
+    query_name: intra.svenskakyrkan.se
+    query_type: A
+    interval_seconds: 300
+
+  - id: builtin-http-intranet
+    type: http_get
+    target: https://intra.svenskakyrkan.se/health
+    interval_seconds: 300
+    expect_status: 200
+
+# Canary-mål används av klientens network context check (Iteration 2 senare del).
+canary_targets:
+  - target: ad-1.intern
+    description: AD-DC primär
+  - target: smtp.intern
+    description: SMTP-server
+
+# IP-ranges (CIDR) som klassificeras som NKN. Lämnas tomt tills riktiga ranges känns.
+nkn_public_ip_ranges: []

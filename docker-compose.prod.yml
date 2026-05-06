@@ -5,10 +5,12 @@ services:
     environment:
       LOG_LEVEL: INFO
       ENVIRONMENT: production
-      MVP_TOKEN: ${MVP_TOKEN}
+      COORDINATOR_CONFIG: /app/config.yaml
+      DATABASE_PATH: /app/data/coordinator.db
       COORDINATOR_SECRET: ${COORDINATOR_SECRET}
-      DATABASE_URL: ${DATABASE_URL}
-    volumes: []
+    volumes:
+      - ./coordinator/config.yaml:/app/config.yaml:ro
+      - coordinator-data:/app/data
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 4
     restart: unless-stopped
 
@@ -44,3 +46,4 @@ services:
 volumes:
   caddy-data:
   caddy-config:
+  coordinator-data:

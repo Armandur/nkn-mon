@@ -6,13 +6,18 @@ services:
       target: dev
     environment:
       VICTORIAMETRICS_URL: http://victoriametrics:8428
-      MVP_TOKEN: mvp-fixed-token-dev
+      COORDINATOR_CONFIG: /app/config.yaml
+      DATABASE_PATH: /app/data/coordinator.db
+      ADMIN_USER: admin
+      ADMIN_TOKEN: admin-dev
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
     ports:
       - "8200:8000"
     volumes:
       - ./coordinator/src:/app/src
+      - ./coordinator/config.yaml:/app/config.yaml
+      - coordinator-data:/app/data
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
     depends_on:
       victoriametrics:
@@ -62,3 +67,4 @@ services:
 volumes:
   vm-data:
   grafana-data:
+  coordinator-data:

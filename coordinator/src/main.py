@@ -1,9 +1,10 @@
-"""NKN-Monitor coordinator – Iteration 1.
+"""NKN-Monitor coordinator – Iteration 2 (leverans 1).
 
 Endpoints:
-- GET  /healthz          - liveness
-- POST /probe/register   - tilldelar fast MVP-token (ingen DB ännu)
-- POST /probe/results    - validerar och skriver mätresultat till VictoriaMetrics
+- GET  /healthz
+- POST /probe/register   - validerar registration_key, skapar probe, returnerar unik token
+- GET  /probe/spec       - returnerar mätspec (kräver bearer-token)
+- POST /probe/results    - validerar token, skriver till VictoriaMetrics
 """
 from __future__ import annotations
 
@@ -11,13 +12,16 @@ import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from typing import Literal
+from datetime import datetime, timedelta, timezone
+from typing import Any, Literal
 
 import httpx
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from .api.admin import router as admin_router
+from .config import CoordinatorConfig, load_config
+from .storage.sqlite import Probe, Storage, generate_token, open_storage
 from .vm import build_lines, write_to_vm
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
@@ -25,20 +29,27 @@ logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s %(levelname)s %(name)s:
 logger = logging.getLogger("nkn.coordinator")
 
 VM_URL = os.getenv("VICTORIAMETRICS_URL", "http://victoriametrics:8428")
-MVP_TOKEN = os.getenv("MVP_TOKEN", "mvp-fixed-token-dev")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.http = httpx.AsyncClient(timeout=10.0)
-    logger.info("Coordinator startar, VM_URL=%s", VM_URL)
+    app.state.config = load_config()
+    app.state.storage = open_storage()
+    logger.info(
+        "Coordinator startar, VM_URL=%s, %d builtin-mått, %d registrerade probes",
+        VM_URL,
+        len(app.state.config.builtin_measurements),
+        app.state.storage.count_probes(),
+    )
     try:
         yield
     finally:
         await app.state.http.aclose()
 
 
-app = FastAPI(title="NKN-Monitor coordinator", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="NKN-Monitor coordinator", version="0.2.0", lifespan=lifespan)
+app.include_router(admin_router)
 
 
 # --- Modeller ---------------------------------------------------------------
@@ -65,6 +76,21 @@ class RegisterResponse(BaseModel):
     heartbeat_interval_seconds: int
 
 
+class SpecMeasurement(BaseModel):
+    id: str
+    category: Literal["builtin", "peer", "user_defined"] = "builtin"
+    type: str
+    target: str
+    interval_seconds: int
+    extra: dict[str, Any] = Field(default_factory=dict)
+
+
+class SpecResponse(BaseModel):
+    spec_version: str
+    valid_until: str
+    measurements: list[SpecMeasurement]
+
+
 class PingResult(BaseModel):
     measurement_id: str
     timestamp: str
@@ -89,15 +115,21 @@ class ResultsResponse(BaseModel):
     rejected_reasons: list[str] = Field(default_factory=list)
 
 
-# --- Auth -------------------------------------------------------------------
+# --- Auth-dependency --------------------------------------------------------
 
 
-def _require_bearer(authorization: str | None) -> None:
+def authenticated_probe(
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> Probe:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing bearer token")
     token = authorization.removeprefix("Bearer ").strip()
-    if token != MVP_TOKEN:
-        raise HTTPException(status_code=401, detail="Invalid token")
+    storage: Storage = request.app.state.storage
+    probe = storage.find_probe_by_token(token)
+    if probe is None or not probe.enabled:
+        raise HTTPException(status_code=401, detail="Invalid or disabled token")
+    return probe
 
 
 # --- Endpoints --------------------------------------------------------------
@@ -109,23 +141,48 @@ async def healthz() -> dict[str, str]:
 
 
 @app.post("/probe/register", response_model=RegisterResponse)
-async def register(req: RegisterRequest) -> RegisterResponse:
-    # Iteration 1: ingen DB-skrivning, ingen riktig validering av registration_key.
-    # Token är samma för alla klienter och hårdkodad via env. Detta byts ut i Iteration 2.
-    if not req.registration_key:
-        raise HTTPException(status_code=400, detail="registration_key krävs")
+async def register(req: RegisterRequest, request: Request) -> RegisterResponse:
+    config: CoordinatorConfig = request.app.state.config
+    storage: Storage = request.app.state.storage
+
+    if req.registration_key not in config.registration_keys:
+        raise HTTPException(status_code=403, detail="Ogiltig registreringsnyckel")
+
     client_id = str(uuid.uuid4())
+    token = generate_token()
+    storage.register_probe(
+        probe_id=client_id,
+        token=token,
+        hostname=req.client_metadata.hostname,
+        site_name=req.client_metadata.site_name,
+        ecclesiastical_unit=req.client_metadata.ecclesiastical_unit,
+        site_type=req.client_metadata.site_type,
+        notes=req.client_metadata.notes,
+    )
     logger.info(
-        "Registrerade klient client_id=%s site=%s host=%s",
+        "Registrerade probe client_id=%s host=%s site=%s",
         client_id,
-        req.client_metadata.site_name,
         req.client_metadata.hostname,
+        req.client_metadata.site_name,
     )
     return RegisterResponse(
         client_id=client_id,
-        client_token=MVP_TOKEN,
+        client_token=token,
         initial_spec_url="/probe/spec",
-        heartbeat_interval_seconds=300,
+        heartbeat_interval_seconds=config.heartbeat_interval_seconds,
+    )
+
+
+@app.get("/probe/spec", response_model=SpecResponse)
+async def get_spec(request: Request, probe: Probe = Depends(authenticated_probe)) -> SpecResponse:
+    config: CoordinatorConfig = request.app.state.config
+    now = datetime.now(timezone.utc)
+    valid_until = now + timedelta(seconds=config.spec_validity_seconds)
+    measurements = [_to_spec_measurement(m) for m in config.builtin_measurements]
+    return SpecResponse(
+        spec_version=now.isoformat(timespec="seconds"),
+        valid_until=valid_until.isoformat(timespec="seconds"),
+        measurements=measurements,
     )
 
 
@@ -133,9 +190,10 @@ async def register(req: RegisterRequest) -> RegisterResponse:
 async def results(
     req: ResultsRequest,
     request: Request,
-    authorization: str | None = Header(default=None),
+    probe: Probe = Depends(authenticated_probe),
 ) -> ResultsResponse:
-    _require_bearer(authorization)
+    if probe.id != req.client_id:
+        raise HTTPException(status_code=403, detail="client_id matchar inte token")
 
     accepted: list[PingResult] = []
     rejected_reasons: list[str] = []
@@ -146,17 +204,39 @@ async def results(
         accepted.append(r)
 
     if accepted:
-        lines = build_lines(req.client_id, accepted)
+        site = next((r.site for r in accepted if r.site), probe.site_name)
+        for r in accepted:
+            if r.site is None:
+                r.site = site
+        lines = build_lines(probe.id, accepted)
         try:
             await write_to_vm(request.app.state.http, VM_URL, lines)
         except httpx.HTTPError as exc:
             logger.exception("VM-skrivning misslyckades")
             raise HTTPException(status_code=502, detail=f"VM-skrivning misslyckades: {exc}") from exc
 
+    request.app.state.storage.touch_heartbeat(probe.id)
+
     return ResultsResponse(
         accepted=len(accepted),
         rejected=len(req.results) - len(accepted),
         rejected_reasons=rejected_reasons,
+    )
+
+
+# --- Hjälpare ---------------------------------------------------------------
+
+
+def _to_spec_measurement(raw: dict[str, Any]) -> SpecMeasurement:
+    known = {"id", "type", "target", "interval_seconds", "category"}
+    extra = {k: v for k, v in raw.items() if k not in known}
+    return SpecMeasurement(
+        id=raw["id"],
+        category=raw.get("category", "builtin"),
+        type=raw["type"],
+        target=raw["target"],
+        interval_seconds=int(raw.get("interval_seconds", 60)),
+        extra=extra,
     )
 
 

@@ -1,7 +1,8 @@
-"""Mock-klient för Iteration 1.
+"""Mock-klient för Iteration 2.
 
-Simulerar N stycken probes som registrerar sig hos koordinatorn och var
-MOCK_INTERVAL_SECONDS skickar in 1 ping-resultat med slumpat RTT 5-50 ms.
+Simulerar N probes som registrerar sig, hämtar spec och rapporterar in
+ping-resultat enligt specens icmp_ping-mått. Övriga mättyper i specen
+(tcp_ping, dns_query, http_get) ignoreras tills riktiga klienten stöder dem.
 """
 from __future__ import annotations
 
@@ -40,7 +41,6 @@ def _now_iso() -> str:
 
 
 def _sample_rtt() -> tuple[float, float, float, float, bool]:
-    """Returnera (min, avg, max, loss_pct, success) enligt scenariot."""
     if SCENARIO == "degraded":
         avg = random.uniform(40, 200)
         loss = random.choice([0, 0, 5, 10, 25])
@@ -60,7 +60,7 @@ def _sample_rtt() -> tuple[float, float, float, float, bool]:
     return (rtt_min, avg, rtt_max, loss, success)
 
 
-async def register(client: httpx.AsyncClient, idx: int) -> tuple[str, str, dict]:
+async def _register(client: httpx.AsyncClient, idx: int) -> tuple[str, str, dict]:
     hostname, site_name, eccl = SITES[idx % len(SITES)]
     hostname = f"{hostname}-{idx}"
     payload = {
@@ -80,12 +80,19 @@ async def register(client: httpx.AsyncClient, idx: int) -> tuple[str, str, dict]
     return data["client_id"], data["client_token"], {"site": site_name, "hostname": hostname}
 
 
+async def _fetch_spec(client: httpx.AsyncClient, headers: dict) -> list[dict]:
+    resp = await client.get(f"{COORDINATOR_URL}/probe/spec", headers=headers)
+    resp.raise_for_status()
+    spec = resp.json()
+    return [m for m in spec.get("measurements", []) if m.get("type") == "icmp_ping"]
+
+
 async def run_probe(idx: int) -> None:
     backoff = 1.0
     async with httpx.AsyncClient(timeout=10.0) as client:
         while True:
             try:
-                client_id, token, meta = await register(client, idx)
+                client_id, token, meta = await _register(client, idx)
                 break
             except Exception as exc:
                 log.warning("Probe %d kunde inte registrera (försöker igen): %s", idx, exc)
@@ -93,40 +100,51 @@ async def run_probe(idx: int) -> None:
                 backoff *= 2
 
         headers = {"Authorization": f"Bearer {token}"}
-        target = "ad-1.intern"
+        ping_targets: list[dict] = []
+        spec_age = 99999.0
 
         while True:
-            rtt_min, rtt_avg, rtt_max, loss, success = _sample_rtt()
-            payload = {
-                "client_id": client_id,
-                "results": [
-                    {
-                        "measurement_id": "builtin-ping-ad",
-                        "timestamp": _now_iso(),
-                        "type": "icmp_ping",
-                        "target": target,
-                        "success": success,
-                        "rtt_ms_min": rtt_min if success else None,
-                        "rtt_ms_avg": rtt_avg if success else None,
-                        "rtt_ms_max": rtt_max if success else None,
-                        "packet_loss_pct": loss,
-                        "site": meta["site"],
-                    }
-                ],
-            }
-            try:
-                resp = await client.post(
-                    f"{COORDINATOR_URL}/probe/results", json=payload, headers=headers
-                )
-                resp.raise_for_status()
-                log.info(
-                    "Probe %d (%s) skickade rtt_avg=%.1f loss=%.0f%% success=%s -> %s",
-                    idx, meta["site"], rtt_avg, loss, success, resp.json(),
-                )
-            except Exception as exc:
-                log.warning("Probe %d kunde inte rapportera: %s", idx, exc)
+            if spec_age > 600 or not ping_targets:
+                try:
+                    ping_targets = await _fetch_spec(client, headers)
+                    spec_age = 0
+                    log.info("Probe %d hämtade spec: %d icmp_ping-mål", idx, len(ping_targets))
+                except Exception as exc:
+                    log.warning("Probe %d kunde inte hämta spec: %s", idx, exc)
 
-            await asyncio.sleep(INTERVAL + random.uniform(-2, 2))
+            results = []
+            for m in ping_targets:
+                rtt_min, rtt_avg, rtt_max, loss, success = _sample_rtt()
+                results.append({
+                    "measurement_id": m["id"],
+                    "timestamp": _now_iso(),
+                    "type": "icmp_ping",
+                    "target": m["target"],
+                    "success": success,
+                    "rtt_ms_min": rtt_min if success else None,
+                    "rtt_ms_avg": rtt_avg if success else None,
+                    "rtt_ms_max": rtt_max if success else None,
+                    "packet_loss_pct": loss,
+                    "site": meta["site"],
+                })
+
+            if results:
+                payload = {"client_id": client_id, "results": results}
+                try:
+                    resp = await client.post(
+                        f"{COORDINATOR_URL}/probe/results", json=payload, headers=headers
+                    )
+                    resp.raise_for_status()
+                    log.info(
+                        "Probe %d (%s) skickade %d resultat -> %s",
+                        idx, meta["site"], len(results), resp.json(),
+                    )
+                except Exception as exc:
+                    log.warning("Probe %d kunde inte rapportera: %s", idx, exc)
+
+            sleep_for = INTERVAL + random.uniform(-2, 2)
+            spec_age += sleep_for
+            await asyncio.sleep(sleep_for)
 
 
 async def main() -> None:
