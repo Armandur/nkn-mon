@@ -18,6 +18,7 @@ services:
       - "--storageDataPath=/storage"
       - "--retentionPeriod=1y"
       - "--httpListenAddr=:8428"
+      - "--influxSkipSingleField"
     restart: unless-stopped
 
   grafana:

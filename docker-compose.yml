@@ -24,6 +24,7 @@ services:
       - "--storageDataPath=/storage"
       - "--retentionPeriod=90d"
       - "--httpListenAddr=:8428"
+      - "--influxSkipSingleField"
     volumes:
       - vm-data:/storage
     ports:
