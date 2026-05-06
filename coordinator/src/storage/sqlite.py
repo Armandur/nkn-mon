@@ -299,6 +299,16 @@ class Storage:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def delete_probe(self, probe_id: str) -> bool:
+        """Ta bort en specifik probe (inkl. dess traceroute-paths)."""
+        with self._lock, self._connect() as conn:
+            cur = conn.execute("DELETE FROM probes WHERE id = ?", (probe_id,))
+            conn.execute(
+                "DELETE FROM traceroute_paths WHERE client_id = ?", (probe_id,)
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
     def delete_dead_probes(self, older_than_hours: int) -> int:
         """Ta bort probes som inte heartbeatat på X timmar.
 

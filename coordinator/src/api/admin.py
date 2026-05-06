@@ -225,6 +225,19 @@ def get_probes(request: Request, _: str = Depends(require_admin)) -> dict:
     return {"probes": request.app.state.storage.list_probes()}
 
 
+@router.delete("/api/probes/{probe_id}")
+def delete_probe(
+    probe_id: str,
+    request: Request,
+    _: str = Depends(require_admin),
+) -> dict:
+    ok = request.app.state.storage.delete_probe(probe_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Probe finns inte")
+    logger.info("Probe %s borttagen", probe_id)
+    return {"status": "deleted", "id": probe_id}
+
+
 @router.post("/api/probes/sweep")
 def sweep_dead_probes(
     request: Request,
@@ -679,6 +692,24 @@ _ADMIN_HTML = r"""<!DOCTYPE html>
     border: 1px solid var(--border); border-radius: 3px;
     padding: 1px 4px; font-size: 12px; font-family: inherit;
   }
+  button.danger { color: var(--error); padding: 4px 10px; }
+  button.danger:hover { background: var(--error); color: var(--bg); border-color: var(--error); }
+  .toast {
+    position: fixed; bottom: 20px; right: 20px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px; padding: 10px 16px;
+    font-size: 13px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    opacity: 0; transform: translateY(10px);
+    transition: opacity 0.2s, transform 0.2s;
+    pointer-events: none;
+    z-index: 1000;
+    max-width: 360px;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.success { border-left-color: var(--success); }
+  .toast.error { border-left-color: var(--error); }
   .age-fresh { color: var(--success); }
   .age-stale { color: var(--warn); }
   .age-dead { color: var(--error); }
@@ -1026,6 +1057,7 @@ _ADMIN_HTML = r"""<!DOCTYPE html>
           <th>Publik IP</th>
           <th>Senaste heartbeat</th>
           <th>Version</th>
+          <th></th>
         </tr>
       </thead>
       <tbody id="probes-body"></tbody>
@@ -1049,6 +1081,8 @@ _ADMIN_HTML = r"""<!DOCTYPE html>
       <tbody id="traceroute-body"></tbody>
     </table>
   </section>
+
+  <div id="toast" class="toast"></div>
 </main>
 <script>
 const editor = document.getElementById("editor");
@@ -1059,6 +1093,16 @@ const reloadBtn = document.getElementById("reload");
 function setStatus(text, kind) {
   statusEl.textContent = text;
   statusEl.className = "status" + (kind ? " " + kind : "");
+}
+
+let _toastTimer = null;
+function showToast(message, kind = "success", durationMs = 3500) {
+  const el = document.getElementById("toast");
+  if (!el) return;
+  el.textContent = message;
+  el.className = "toast show" + (kind ? " " + kind : "");
+  if (_toastTimer) clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { el.className = "toast"; }, durationMs);
 }
 
 async function loadConfig() {
@@ -1143,8 +1187,24 @@ async function refreshProbes() {
       <td>${escapeHtml(p.last_seen_public_ip) || '<span class="muted">-</span>'}</td>
       <td class="${age.cls}">${age.text}</td>
       <td class="muted">${escapeHtml(p.version) || '-'}</td>
+      <td><button class="secondary danger" data-delete="${escapeHtml(p.id)}" title="Ta bort proben permanent">x</button></td>
     </tr>`;
   }).join("");
+
+  tbody.querySelectorAll("[data-delete]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.delete;
+      if (!confirm(`Radera probe ${id.slice(0,8)}... permanent? Tar även bort dess traceroute-historik.`)) return;
+      const r = await fetch(`/admin/api/probes/${id}`, { method: "DELETE" });
+      if (r.ok) {
+        showToast(`Probe ${id.slice(0,8)} raderad`, "success");
+        refreshProbes();
+        refreshStatus();
+      } else {
+        showToast("Kunde inte radera: " + (await r.text()), "error");
+      }
+    });
+  });
 
   tbody.querySelectorAll(".role-select").forEach(sel => {
     sel.addEventListener("change", async (e) => {
@@ -1492,9 +1552,9 @@ function renderTracerouteDetail(paths) {
   if (paths.length > 1) {
     const lines = paths.slice(0, 20).map(p => {
       const age = formatAge(p.timestamp);
-      const ttl = p.total_ms !== null ? `${Math.round(p.total_ms)}ms` : "-";
-      return `${age.text} - ${p.hops || '?'} hops, ${ttl}`;
-    }).join(" • ");
+      const ttl = p.total_ms !== null ? `${Math.round(p.total_ms)} ms` : "-";
+      return `<span class="${age.cls}">${age.text}</span>: ${p.hops || '?'} hops, ${ttl}`;
+    }).join(" &nbsp;·&nbsp; ");
     history = `<div class="tr-history-line">Historik: ${lines}</div>`;
   }
   return `<div class="tr-detail">${hops}${history}</div>`;
@@ -1506,11 +1566,15 @@ async function sweepDeadProbes() {
   const r = await fetch(`/admin/api/probes/sweep?older_than_hours=${hours}`, { method: "POST" });
   if (r.ok) {
     const j = await r.json();
-    setStatus(`Rensade ${j.deleted} probes (>${j.older_than_hours} h)`, "success");
+    if (j.deleted === 0) {
+      showToast(`Inga probes äldre än ${j.older_than_hours} h att rensa`, "success");
+    } else {
+      showToast(`Rensade ${j.deleted} probes (>${j.older_than_hours} h)`, "success");
+    }
     refreshProbes();
     refreshStatus();
   } else {
-    setStatus("Sweep-fel: " + (await r.text()), "error");
+    showToast("Sweep-fel: " + (await r.text()), "error");
   }
 }
 document.getElementById("sweep-btn").addEventListener("click", sweepDeadProbes);
