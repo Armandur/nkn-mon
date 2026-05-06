@@ -1,0 +1,7 @@
+FROM python:3.12-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /app
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+RUN uv pip install --system --no-cache "httpx>=0.27"
+COPY mock_probe.py ./
+CMD ["python", "mock_probe.py"]

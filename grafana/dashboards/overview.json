@@ -1,0 +1,126 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 4,
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {
+        "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [
+        {
+          "expr": "nkn_ping_rtt_ms",
+          "legendFormat": "{{site}} -> {{target}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Ping RTT (avg) per probe",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 5},
+              {"color": "red", "value": 25}
+            ]
+          },
+          "unit": "percent",
+          "max": 100,
+          "min": 0
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 10},
+      "id": 2,
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom"},
+        "tooltip": {"mode": "single"}
+      },
+      "targets": [
+        {
+          "expr": "nkn_ping_loss_pct",
+          "legendFormat": "{{site}} -> {{target}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Paketförlust",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [
+            {"options": {"0": {"text": "Down", "color": "red"}}, "type": "value"},
+            {"options": {"1": {"text": "Up", "color": "green"}}, "type": "value"}
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "green", "value": 1}
+            ]
+          }
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 10},
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "orientation": "auto",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "nkn_ping_success",
+          "legendFormat": "{{site}}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "title": "Senaste status per probe",
+      "type": "stat"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["nkn", "iteration-1"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "NKN-Monitor – översikt",
+  "uid": "nkn-overview",
+  "version": 1,
+  "weekStart": ""
+}

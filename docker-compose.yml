@@ -1,0 +1,63 @@
+services:
+  coordinator:
+    build:
+      context: ./coordinator
+      dockerfile: Dockerfile
+      target: dev
+    environment:
+      VICTORIAMETRICS_URL: http://victoriametrics:8428
+      MVP_TOKEN: mvp-fixed-token-dev
+      LOG_LEVEL: DEBUG
+      ENVIRONMENT: development
+    ports:
+      - "8200:8000"
+    volumes:
+      - ./coordinator/src:/app/src
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      victoriametrics:
+        condition: service_started
+
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:latest
+    command:
+      - "--storageDataPath=/storage"
+      - "--retentionPeriod=90d"
+      - "--httpListenAddr=:8428"
+    volumes:
+      - vm-data:/storage
+    ports:
+      - "8428:8428"
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    ports:
+      - "3000:3000"
+    depends_on:
+      - victoriametrics
+
+  mock-client:
+    build:
+      context: ./mock-client
+    environment:
+      COORDINATOR_URL: http://coordinator:8000
+      MOCK_PROBES: "5"
+      MOCK_INTERVAL_SECONDS: "30"
+      MOCK_SCENARIO: normal
+      REGISTRATION_KEY: dev-registration-key
+    profiles: ["mock"]
+    depends_on:
+      coordinator:
+        condition: service_started
+
+volumes:
+  vm-data:
+  grafana-data:

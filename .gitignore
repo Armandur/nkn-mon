@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+
+# uv
+.python-version
+
+# Env
+.env
+.env.local
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Lokala datafiler / volymer
+*.db
+*.db-journal
+data/
+
+# Gemini-arbetsfiler
+tmp/gemini/
+tmp/
+
+# Loggar
+dev.log
+*.log
