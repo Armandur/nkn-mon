@@ -136,6 +136,32 @@ function Get-RegistrationMetadata {
     return $defaults
 }
 
+function Invoke-NknJson {
+    <#
+        Wrappar Invoke-RestMethod med UTF-8-encodad body. Behövs eftersom
+        Invoke-RestMethod på PowerShell 5.1 skickar strängar i ISO-8859-1
+        som default vilket bryter FastAPI:s JSON-parser.
+    #>
+    param(
+        [string]$Method,
+        [string]$Uri,
+        [hashtable]$Headers = @{},
+        [object]$Body
+    )
+    $params = @{
+        Method = $Method
+        Uri = $Uri
+        Headers = $Headers
+        ContentType = "application/json; charset=utf-8"
+        UseBasicParsing = $true
+    }
+    if ($Body) {
+        $json = $Body | ConvertTo-Json -Depth 8 -Compress
+        $params.Body = [System.Text.Encoding]::UTF8.GetBytes($json)
+    }
+    return Invoke-RestMethod @params
+}
+
 function Register-Probe {
     $meta = Get-RegistrationMetadata
 
@@ -148,11 +174,10 @@ function Register-Probe {
             site_type = $meta.SiteType
             notes = $meta.Notes
         }
-    } | ConvertTo-Json -Depth 5
+    }
 
     Write-NknLog "INFO" "Registrerar mot $CoordinatorUrl med site_name='$($meta.SiteName)'"
-    $resp = Invoke-RestMethod -Method Post -Uri "$CoordinatorUrl/probe/register" `
-        -Body $payload -ContentType "application/json"
+    $resp = Invoke-NknJson -Method Post -Uri "$CoordinatorUrl/probe/register" -Body $payload
 
     $cfg = [pscustomobject]@{
         coordinator_url = $CoordinatorUrl
@@ -222,10 +247,9 @@ function Send-Results {
     $payload = @{
         client_id = $Config.client_id
         results = $Results
-    } | ConvertTo-Json -Depth 6
+    }
     $headers = @{ Authorization = "Bearer $($Config.client_token)" }
-    $resp = Invoke-RestMethod -Method Post -Uri "$CoordinatorUrl/probe/results" `
-        -Headers $headers -Body $payload -ContentType "application/json"
+    $resp = Invoke-NknJson -Method Post -Uri "$CoordinatorUrl/probe/results" -Headers $headers -Body $payload
     Write-NknLog "INFO" "Skickade $($Results.Count) resultat: accepted=$($resp.accepted) rejected=$($resp.rejected)"
 }
 
