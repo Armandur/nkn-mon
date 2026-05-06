@@ -5,6 +5,14 @@ set -eu
 echo "[init] Förbereder /data"
 mkdir -p /data/grafana /data/grafana/logs /data/grafana/plugins /data/grafana/dashboards /data/vm
 
+# Lägg in hosts-aliaser så samma Grafana-provisioning fungerar både i
+# dev-compose (där tjänsterna är separata containers med Docker-DNS) och
+# i single-image (där alla processer är samma container).
+if ! grep -q "coordinator victoriametrics" /etc/hosts 2>/dev/null; then
+    echo "127.0.0.1 coordinator victoriametrics" >> /etc/hosts || true
+    echo "[init] Lade till hosts-aliaser coordinator/victoriametrics -> 127.0.0.1"
+fi
+
 if [ ! -f /data/config.yaml ]; then
     echo "[init] Kopierar default config -> /data/config.yaml"
     cp /usr/share/nkn-mon/config.yaml.default /data/config.yaml
