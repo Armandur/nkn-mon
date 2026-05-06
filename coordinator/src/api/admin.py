@@ -80,6 +80,8 @@ async def put_config(request: Request, _: str = Depends(require_admin)) -> dict:
             builtin_measurements=list(parsed.get("builtin_measurements", [])),
             canary_targets=list(parsed.get("canary_targets", [])),
             nkn_public_ip_ranges=list(parsed.get("nkn_public_ip_ranges", [])),
+            peer_count_per_probe=int(parsed.get("peer_count_per_probe", 3)),
+            peer_interval_seconds=int(parsed.get("peer_interval_seconds", 300)),
         )
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=f"Ogiltig config: {exc}") from exc

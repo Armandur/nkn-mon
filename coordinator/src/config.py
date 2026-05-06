@@ -17,6 +17,8 @@ class CoordinatorConfig:
     builtin_measurements: list[dict[str, Any]] = field(default_factory=list)
     canary_targets: list[dict[str, Any]] = field(default_factory=list)
     nkn_public_ip_ranges: list[str] = field(default_factory=list)
+    peer_count_per_probe: int = 3
+    peer_interval_seconds: int = 300
 
     @classmethod
     def from_file(cls, path: Path) -> "CoordinatorConfig":
@@ -29,6 +31,8 @@ class CoordinatorConfig:
             builtin_measurements=list(raw.get("builtin_measurements", [])),
             canary_targets=list(raw.get("canary_targets", [])),
             nkn_public_ip_ranges=list(raw.get("nkn_public_ip_ranges", [])),
+            peer_count_per_probe=int(raw.get("peer_count_per_probe", 3)),
+            peer_interval_seconds=int(raw.get("peer_interval_seconds", 300)),
         )
 
 

@@ -35,11 +35,12 @@ CREATE TABLE IF NOT EXISTS probes (
 CREATE INDEX IF NOT EXISTS idx_probes_token_hash ON probes(token_hash);
 """
 
-# Kolumner som kan saknas i äldre databaser (Iteration 2 leverans 1).
+# Kolumner som kan saknas i äldre databaser (Iteration 2 leverans 1+).
 _MIGRATIONS: list[tuple[str, str]] = [
     ("last_seen_public_ip", "TEXT"),
     ("last_classification", "TEXT"),
     ("version", "TEXT"),
+    ("last_local_ipv4_json", "TEXT"),
 ]
 
 
@@ -146,13 +147,17 @@ class Storage:
         public_ip: str | None,
         classification: str | None,
         version: str | None,
+        local_ipv4: list[str] | None = None,
     ) -> None:
+        import json
         now = datetime.now(timezone.utc).isoformat()
+        local_json = json.dumps(local_ipv4) if local_ipv4 else None
         with self._lock, self._connect() as conn:
             conn.execute(
                 "UPDATE probes SET last_heartbeat_at = ?, last_seen_public_ip = ?, "
-                "last_classification = ?, version = COALESCE(?, version) WHERE id = ?",
-                (now, public_ip, classification, version, probe_id),
+                "last_classification = ?, version = COALESCE(?, version), "
+                "last_local_ipv4_json = COALESCE(?, last_local_ipv4_json) WHERE id = ?",
+                (now, public_ip, classification, version, local_json, probe_id),
             )
             conn.commit()
 
@@ -161,13 +166,23 @@ class Storage:
             return conn.execute("SELECT COUNT(*) FROM probes WHERE enabled = 1").fetchone()[0]
 
     def list_probes(self) -> list[dict]:
+        import json
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT id, hostname, site_name, ecclesiastical_unit, site_type, "
                 "enabled, last_heartbeat_at, last_seen_public_ip, last_classification, "
-                "version, created_at FROM probes ORDER BY created_at DESC"
+                "version, last_local_ipv4_json, created_at FROM probes ORDER BY created_at DESC"
             ).fetchall()
-        return [dict(r) for r in rows]
+        result = []
+        for r in rows:
+            d = dict(r)
+            raw = d.pop("last_local_ipv4_json", None)
+            try:
+                d["last_local_ipv4"] = json.loads(raw) if raw else []
+            except (ValueError, TypeError):
+                d["last_local_ipv4"] = []
+            result.append(d)
+        return result
 
     def delete_dead_probes(self, older_than_hours: int) -> int:
         """Ta bort probes som inte heartbeatat på X timmar.

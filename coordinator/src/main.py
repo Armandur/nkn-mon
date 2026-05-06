@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from .api.admin import router as admin_router
 from .classification import classify_public_ip
 from .config import CoordinatorConfig, load_config
+from .peers import assign_peers
 from .storage.sqlite import Probe, Storage, generate_token, open_storage
 from .vm import build_heartbeat_lines, build_lines, write_to_vm
 
@@ -235,9 +236,36 @@ async def register(req: RegisterRequest, request: Request) -> RegisterResponse:
 @app.get("/probe/spec", response_model=SpecResponse)
 async def get_spec(request: Request, probe: Probe = Depends(authenticated_probe)) -> SpecResponse:
     config: CoordinatorConfig = request.app.state.config
+    storage: Storage = request.app.state.storage
     now = datetime.now(timezone.utc)
     valid_until = now + timedelta(seconds=config.spec_validity_seconds)
     measurements = [_to_spec_measurement(m) for m in config.builtin_measurements]
+
+    # Lägg till peer-mätningar (Iteration 3): plocka N andra NKN-probes på
+    # andra /24 och låt klienten pinga dem över deras lokala IP.
+    all_probes = storage.list_probes()
+    me = next((p for p in all_probes if p["id"] == probe.id), None)
+    if me:
+        peers = assign_peers(me, all_probes, count=config.peer_count_per_probe)
+        for peer in peers:
+            local_ips = peer.get("last_local_ipv4") or []
+            if not local_ips:
+                continue
+            measurements.append(
+                SpecMeasurement(
+                    id=f"peer-{peer['id'][:8]}",
+                    category="peer",
+                    type="icmp_ping",
+                    target=local_ips[0],
+                    interval_seconds=config.peer_interval_seconds,
+                    extra={
+                        "packet_count": 4,
+                        "peer_client_id": peer["id"],
+                        "peer_site": peer.get("site_name") or "",
+                    },
+                )
+            )
+
     canaries = [
         CanaryTarget(target=c.get("target", ""), description=c.get("description"))
         for c in config.canary_targets
@@ -271,6 +299,7 @@ async def heartbeat(
         public_ip=req.network_context.public_ip,
         classification=classification,
         version=req.version,
+        local_ipv4=list(req.network_context.local_ipv4),
     )
 
     lines = build_heartbeat_lines(

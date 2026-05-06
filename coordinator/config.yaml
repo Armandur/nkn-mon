@@ -9,6 +9,11 @@ heartbeat_interval_seconds: 300
 # slår igenom snabbt. För prod: höj till några minuter eller mer.
 spec_validity_seconds: 120
 
+# Peer-mätning (Iteration 3): coordinator tilldelar varje probe N andra
+# probes på olika /24 att mäta mot. Roterar dagligen.
+peer_count_per_probe: 3
+peer_interval_seconds: 300
+
 # Tillåtna registreringsnycklar. Probes använder en av dessa vid första /probe/register.
 # Rotera vid behov; gamla nycklar kan tas bort utan att redan registrerade probes
 # påverkas (de använder sin client_token därefter).

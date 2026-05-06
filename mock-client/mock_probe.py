@@ -25,14 +25,14 @@ SCENARIO = os.getenv("MOCK_SCENARIO", "normal")
 REG_KEY = os.getenv("REGISTRATION_KEY", "dev-registration-key")
 
 SITES = [
-    ("EXP-FALUN-01", "Falun församlingsexpedition", "Falu pastorat"),
-    ("KYRKA-LULEA-01", "Luleå domkyrka", "Luleå pastorat"),
-    ("EXP-VAXJO-01", "Växjö stiftskansli", "Växjö stift"),
-    ("KYRKA-VISBY-01", "Visby domkyrka", "Visby pastorat"),
-    ("EXP-UPPSALA-01", "Uppsala stiftskansli", "Uppsala stift"),
-    ("EXP-OSTERSUND-01", "Östersunds expedition", "Härnösands stift"),
-    ("KYRKA-MALMO-01", "S:t Petri Malmö", "Lunds stift"),
-    ("EXP-GBG-01", "Göteborgs stiftskansli", "Göteborgs stift"),
+    ("EXP-FALUN-01",     "Falun församlingsexpedition", "Falu pastorat",       "10.48.1",   "195.67.168.10"),
+    ("KYRKA-LULEA-01",   "Luleå domkyrka",              "Luleå pastorat",      "10.48.2",   "195.67.168.11"),
+    ("EXP-VAXJO-01",     "Växjö stiftskansli",          "Växjö stift",         "10.48.3",   "195.67.168.12"),
+    ("KYRKA-VISBY-01",   "Visby domkyrka",              "Visby pastorat",      "10.48.4",   "195.67.168.13"),
+    ("EXP-UPPSALA-01",   "Uppsala stiftskansli",        "Uppsala stift",       "10.48.5",   "195.67.168.14"),
+    ("EXP-OSTERSUND-01", "Östersunds expedition",       "Härnösands stift",    "10.48.6",   "195.67.168.15"),
+    ("KYRKA-MALMO-01",   "S:t Petri Malmö",             "Lunds stift",         "10.48.7",   "195.67.168.16"),
+    ("EXP-GBG-01",       "Göteborgs stiftskansli",      "Göteborgs stift",     "10.48.8",   "195.67.168.17"),
 ]
 
 
@@ -61,8 +61,9 @@ def _sample_rtt() -> tuple[float, float, float, float, bool]:
 
 
 async def _register(client: httpx.AsyncClient, idx: int) -> tuple[str, str, dict]:
-    hostname, site_name, eccl = SITES[idx % len(SITES)]
+    hostname, site_name, eccl, subnet, public_ip = SITES[idx % len(SITES)]
     hostname = f"{hostname}-{idx}"
+    local_ip = f"{subnet}.{10 + (idx // len(SITES))}"
     payload = {
         "registration_key": REG_KEY,
         "client_metadata": {
@@ -76,8 +77,38 @@ async def _register(client: httpx.AsyncClient, idx: int) -> tuple[str, str, dict
     resp = await client.post(f"{COORDINATOR_URL}/probe/register", json=payload)
     resp.raise_for_status()
     data = resp.json()
-    log.info("Probe %d registrerad client_id=%s site=%s", idx, data["client_id"], site_name)
-    return data["client_id"], data["client_token"], {"site": site_name, "hostname": hostname}
+    log.info(
+        "Probe %d registrerad client_id=%s site=%s local=%s",
+        idx, data["client_id"], site_name, local_ip,
+    )
+    return data["client_id"], data["client_token"], {
+        "site": site_name,
+        "hostname": hostname,
+        "local_ip": local_ip,
+        "public_ip": public_ip,
+        "subnet": subnet,
+    }
+
+
+async def _send_heartbeat(client: httpx.AsyncClient, headers: dict, meta: dict) -> None:
+    payload = {
+        "timestamp": _now_iso(),
+        "version": "mock-0.3",
+        "network_context": {
+            "public_ip": meta["public_ip"],
+            "local_ipv4": [meta["local_ip"]],
+            "default_gateway": f"{meta['subnet']}.1",
+            "dns_servers": ["10.60.0.11"],
+            "domain_membership": "svenskakyrkan.se",
+            "canary_results": [
+                {"target": "knet.ad.svenskakyrkan.se", "reachable": True, "rtt_ms": 12.0},
+                {"target": "smtp.svenskakyrkan.se", "reachable": True, "rtt_ms": 9.0},
+            ],
+        },
+        "host_info": {"os": "Mock Linux", "uptime_hours": 24.0},
+    }
+    resp = await client.post(f"{COORDINATOR_URL}/probe/heartbeat", json=payload, headers=headers)
+    resp.raise_for_status()
 
 
 async def _fetch_spec(client: httpx.AsyncClient, headers: dict) -> list[dict]:
@@ -85,6 +116,14 @@ async def _fetch_spec(client: httpx.AsyncClient, headers: dict) -> list[dict]:
     resp.raise_for_status()
     spec = resp.json()
     return [m for m in spec.get("measurements", []) if m.get("type") == "icmp_ping"]
+
+
+def _peer_rtt() -> tuple[float, float, float, float, bool]:
+    """Peer-trafik är typiskt över WAN, lite högre RTT än builtin."""
+    avg = random.uniform(15, 90)
+    spread = random.uniform(1.0, 5.0)
+    loss = 0 if random.random() > 0.03 else random.choice([5, 25])
+    return (max(0.1, avg - spread), avg, avg + spread, loss, loss < 100)
 
 
 async def run_probe(idx: int) -> None:
@@ -102,19 +141,39 @@ async def run_probe(idx: int) -> None:
         headers = {"Authorization": f"Bearer {token}"}
         ping_targets: list[dict] = []
         spec_age = 99999.0
+        hb_age = 99999.0
 
         while True:
-            if spec_age > 600 or not ping_targets:
+            # Heartbeat först så peer-tilldelning kan ske mot oss
+            if hb_age > 60:
+                try:
+                    await _send_heartbeat(client, headers, meta)
+                    hb_age = 0
+                except Exception as exc:
+                    log.warning("Probe %d heartbeat-fel: %s", idx, exc)
+
+            if spec_age > 60 or not ping_targets:
                 try:
                     ping_targets = await _fetch_spec(client, headers)
                     spec_age = 0
-                    log.info("Probe %d hämtade spec: %d icmp_ping-mål", idx, len(ping_targets))
+                    by_cat: dict[str, int] = {}
+                    for m in ping_targets:
+                        c = m.get("category", "builtin")
+                        by_cat[c] = by_cat.get(c, 0) + 1
+                    log.info(
+                        "Probe %d spec: %d mål (%s)",
+                        idx, len(ping_targets),
+                        ", ".join(f"{n} {c}" for c, n in by_cat.items()),
+                    )
                 except Exception as exc:
                     log.warning("Probe %d kunde inte hämta spec: %s", idx, exc)
 
             results = []
             for m in ping_targets:
-                rtt_min, rtt_avg, rtt_max, loss, success = _sample_rtt()
+                if m.get("category") == "peer":
+                    rtt_min, rtt_avg, rtt_max, loss, success = _peer_rtt()
+                else:
+                    rtt_min, rtt_avg, rtt_max, loss, success = _sample_rtt()
                 results.append({
                     "measurement_id": m["id"],
                     "timestamp": _now_iso(),
@@ -144,6 +203,7 @@ async def run_probe(idx: int) -> None:
 
             sleep_for = INTERVAL + random.uniform(-2, 2)
             spec_age += sleep_for
+            hb_age += sleep_for
             await asyncio.sleep(sleep_for)
 
 
