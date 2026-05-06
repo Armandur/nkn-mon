@@ -65,11 +65,31 @@
     "list": [
       {
         "name": "site",
-        "label": "Site (skriv namn, eller lämna tomt för alla)",
-        "type": "textbox",
-        "current": {"selected": false, "text": "", "value": ""},
-        "query": "",
-        "description": "Filtrera på site-namn. T.ex. 'Falun' matchar exakt. Tomt = visa alla."
+        "label": "Site",
+        "type": "query",
+        "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "coordinator-graph"},
+        "query": {
+          "queryType": "infinity",
+          "infinityQuery": {
+            "type": "json",
+            "source": "url",
+            "url": "/admin/api/traceroute-graph/sites",
+            "url_options": {"method": "GET", "data": ""},
+            "format": "table",
+            "parser": "backend",
+            "root_selector": "",
+            "refId": "variable",
+            "columns": [
+              {"selector": "site", "text": "site", "type": "string"}
+            ]
+          }
+        },
+        "definition": "Sites med traceroute-data",
+        "refresh": 1,
+        "includeAll": true,
+        "multi": true,
+        "allValue": "",
+        "sort": 1
       }
     ]
   },
