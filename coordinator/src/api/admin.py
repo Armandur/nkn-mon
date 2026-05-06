@@ -30,6 +30,7 @@ _security = HTTPBasic()
 
 _ADMIN_USER = os.getenv("ADMIN_USER", "admin")
 _ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "admin-dev")
+_GRAFANA_URL = os.getenv("GRAFANA_URL", "")
 if _ADMIN_TOKEN == "admin-dev":
     logger.warning("ADMIN_TOKEN är default 'admin-dev' - byt innan exponering utanför Tailscale")
 
@@ -52,7 +53,14 @@ def require_admin(creds: HTTPBasicCredentials = Depends(_security)) -> str:
 
 @router.get("/", response_class=HTMLResponse)
 def admin_index(_: str = Depends(require_admin)) -> str:
-    return _ADMIN_HTML
+    grafana_link = ""
+    if _GRAFANA_URL:
+        from html import escape
+        grafana_link = (
+            f'<a class="header-link" href="{escape(_GRAFANA_URL)}" '
+            f'target="_blank" rel="noopener">Öppna Grafana →</a>'
+        )
+    return _ADMIN_HTML.replace("<!--GRAFANA_LINK-->", grafana_link)
 
 
 @router.get("/api/config", response_class=PlainTextResponse)
@@ -566,6 +574,14 @@ _ADMIN_HTML = r"""<!DOCTYPE html>
   }
   header h1 { margin: 0; font-size: 18px; font-weight: 600; }
   header .subtitle { color: var(--muted); font-size: 13px; }
+  .header-link {
+    color: var(--accent); text-decoration: none;
+    font-size: 13px; font-weight: 500;
+    padding: 4px 10px;
+    border: 1px solid var(--accent-dim);
+    border-radius: 4px;
+  }
+  .header-link:hover { background: var(--accent-dim); }
   main { padding: 24px; max-width: 1100px; margin: 0 auto; }
   .grid {
     display: grid;
@@ -831,6 +847,8 @@ _ADMIN_HTML = r"""<!DOCTYPE html>
 <header>
   <h1>NKN-Monitor admin</h1>
   <span class="subtitle">config.yaml hot-reload</span>
+  <span style="flex:1;"></span>
+  <!--GRAFANA_LINK-->
 </header>
 <main>
   <div class="grid">

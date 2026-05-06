@@ -10,6 +10,7 @@ services:
       DATABASE_PATH: /app/data/coordinator.db
       ADMIN_USER: admin
       ADMIN_TOKEN: admin-dev
+      GRAFANA_URL: http://localhost:3000
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
     ports:

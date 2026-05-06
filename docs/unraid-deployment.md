@@ -65,6 +65,7 @@ exponering.
 |----------|---------|------------|
 | `ADMIN_TOKEN` | `admin-dev` | **Byt!** Skydd för admin-UI:t |
 | `ADMIN_USER` | `admin` | |
+| `GRAFANA_URL` | (tom) | Sätt till `https://nkn.example.se` så admin-UI:t får en länk till Grafana i headern |
 | `LOG_LEVEL` | `INFO` | `DEBUG` för felsökning |
 | `DATABASE_PATH` | `/data/coordinator.db` | Lämna |
 | `COORDINATOR_CONFIG` | `/data/config.yaml` | Lämna |
