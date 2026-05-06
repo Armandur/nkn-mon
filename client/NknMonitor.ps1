@@ -1,5 +1,5 @@
 ﻿<#
-# Version: 0.6.1
+# Version: 0.6.2
 .SYNOPSIS
     NKN-Monitor probe-klient (PowerShell).
 
@@ -86,9 +86,13 @@ try {
 # mätloopen inte beskattas av modulladdning (~1 sekund i kalla körningar).
 Import-Module DnsClient -ErrorAction SilentlyContinue | Out-Null
 
+# System.Security krävs för DPAPI (ProtectedData). PS 5.1 laddar inte
+# den auto, .NET Framework har den inbyggd men assembly måste inkluderas.
+try { Add-Type -AssemblyName "System.Security" -ErrorAction SilentlyContinue } catch {}
+
 $BufferPath = Join-Path (Split-Path -Parent $ConfigPath) "buffer.jsonl"
 $BufferRetentionDays = 7
-$Script:NknClientVersion = "0.6.1"
+$Script:NknClientVersion = "0.6.2"
 
 # Cache av primär lokal IPv4. Uppdateras vid varje heartbeat.
 $Global:NknPrimaryLocalIp = $null
@@ -151,7 +155,7 @@ function Update-Self {
         lyckad uppdatering - Scheduled Task eller manuell restart plockar
         upp den nya versionen.
     #>
-    param([string]$Url, [string]$ExpectedSha256, [string]$ExpectedVersion)
+    param([string]$Url, [string]$ExpectedSha256, [string]$ExpectedVersion, [string]$Token)
 
     $current = $PSCommandPath
     if (-not $current -or -not (Test-Path $current)) {
@@ -162,7 +166,8 @@ function Update-Self {
     $tmp = "$current.new"
     try {
         Write-NknLog "INFO" "Laddar ner ny klient v$ExpectedVersion från $Url"
-        Invoke-WebRequest -Uri $Url -OutFile $tmp -UseBasicParsing -TimeoutSec 60
+        $headers = @{ Authorization = "Bearer $Token" }
+        Invoke-WebRequest -Uri $Url -OutFile $tmp -UseBasicParsing -TimeoutSec 60 -Headers $headers
         $actualHash = (Get-FileHash -Path $tmp -Algorithm SHA256).Hash.ToLower()
         $expected = $ExpectedSha256.ToLower()
         if ($actualHash -ne $expected) {
@@ -890,7 +895,8 @@ while ($true) {
                 if ($cu.version -and $cu.version -ne $Script:NknClientVersion) {
                     Write-NknLog "INFO" "Servern erbjuder klient v$($cu.version) (har $($Script:NknClientVersion))"
                     Update-Self -Url "$CoordinatorUrl$($cu.url)" `
-                        -ExpectedSha256 $cu.sha256 -ExpectedVersion $cu.version
+                        -ExpectedSha256 $cu.sha256 -ExpectedVersion $cu.version `
+                        -Token (Get-PlainToken -Config $config)
                 }
             }
         } catch {
