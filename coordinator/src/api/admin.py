@@ -280,18 +280,24 @@ async def get_graph_edges(
     return out
 
 
-def _build_traceroute_graph(storage) -> tuple[dict, dict]:
+def _build_traceroute_graph(
+    storage, client_filter: set[str] | None = None
+) -> tuple[dict, dict]:
     """Bygger nodes + edges från senaste traceroute-paths.
 
     Returnerar (nodes_dict, edges_dict) där båda är keyade på id för dedup.
     Probes blir noder med id=probe_id, varje unik hop-IP blir en nod
     med id='hop:<ip>'. Edges går probe -> hop[0] -> hop[1] -> ...
+
+    client_filter: om satt, inkludera bara probes vars id finns i set:et.
     """
     nodes: dict[str, dict] = {}
     edges: dict[tuple[str, str], dict] = {}
 
     for pair in storage.list_traceroute_pairs():
         probe_id = pair["client_id"]
+        if client_filter is not None and probe_id not in client_filter:
+            continue
         site = pair.get("site_name") or probe_id[:8]
         if probe_id not in nodes:
             nodes[probe_id] = {
@@ -344,17 +350,51 @@ def _build_traceroute_graph(storage) -> tuple[dict, dict]:
     return nodes, edges
 
 
+def _parse_client_filter(client_id: str) -> set[str] | None:
+    """Comma-separated ids -> set, tom string -> None (= alla)."""
+    if not client_id or client_id.strip() in {"", "*", ".*"}:
+        return None
+    parts = {c.strip() for c in client_id.split(",") if c.strip()}
+    return parts or None
+
+
+@router.get("/api/traceroute-graph/probes")
+def list_traceroute_graph_probes(request: Request, _: str = Depends(require_admin)) -> list[dict]:
+    """Lista probes som har traceroute-data, lämplig som Grafana variable-källa."""
+    storage = request.app.state.storage
+    seen: dict[str, dict] = {}
+    for pair in storage.list_traceroute_pairs():
+        cid = pair["client_id"]
+        if cid not in seen:
+            seen[cid] = {
+                "id": cid,
+                "title": pair.get("site_name") or cid[:8],
+            }
+    return sorted(seen.values(), key=lambda p: p["title"].lower())
+
+
 @router.get("/api/traceroute-graph/nodes")
-def get_traceroute_graph_nodes(request: Request, _: str = Depends(require_admin)) -> list[dict]:
-    nodes, _ = _build_traceroute_graph(request.app.state.storage)
+def get_traceroute_graph_nodes(
+    request: Request,
+    client_id: str = "",
+    _: str = Depends(require_admin),
+) -> list[dict]:
+    nodes, _ = _build_traceroute_graph(
+        request.app.state.storage, client_filter=_parse_client_filter(client_id)
+    )
     return list(nodes.values())
 
 
 @router.get("/api/traceroute-graph/edges")
-def get_traceroute_graph_edges(request: Request, _: str = Depends(require_admin)) -> list[dict]:
-    nodes, edges = _build_traceroute_graph(request.app.state.storage)
+def get_traceroute_graph_edges(
+    request: Request,
+    client_id: str = "",
+    _: str = Depends(require_admin),
+) -> list[dict]:
+    nodes, edges = _build_traceroute_graph(
+        request.app.state.storage, client_filter=_parse_client_filter(client_id)
+    )
     valid_ids = set(nodes.keys())
-    # Säkerställ att alla edges refererar till existerande nodes
     return [e for e in edges.values() if e["source"] in valid_ids and e["target"] in valid_ids]
 
 

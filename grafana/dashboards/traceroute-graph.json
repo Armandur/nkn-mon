@@ -22,7 +22,7 @@
           "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "coordinator-graph"},
           "type": "json",
           "source": "url",
-          "url": "/admin/api/traceroute-graph/nodes",
+          "url": "/admin/api/traceroute-graph/nodes?client_id=${probe:csv}",
           "url_options": {"method": "GET", "data": ""},
           "format": "table",
           "parser": "backend",
@@ -41,7 +41,7 @@
           "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "coordinator-graph"},
           "type": "json",
           "source": "url",
-          "url": "/admin/api/traceroute-graph/edges",
+          "url": "/admin/api/traceroute-graph/edges?client_id=${probe:csv}",
           "url_options": {"method": "GET", "data": ""},
           "format": "table",
           "parser": "backend",
@@ -54,17 +54,45 @@
           ]
         }
       ],
-      "title": "Traceroute-mesh (senaste path per probe×mätning)",
+      "title": "Traceroute-mesh – senaste path per probe×mätning",
       "type": "nodeGraph"
     }
   ],
   "refresh": "1m",
   "schemaVersion": 39,
   "tags": ["nkn", "traceroute"],
-  "templating": {"list": []},
+  "templating": {
+    "list": [
+      {
+        "name": "probe",
+        "label": "Probe",
+        "type": "query",
+        "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "coordinator-graph"},
+        "query": {
+          "type": "json",
+          "source": "url",
+          "url": "/admin/api/traceroute-graph/probes",
+          "url_options": {"method": "GET", "data": ""},
+          "format": "table",
+          "parser": "backend",
+          "root_selector": "",
+          "columns": [
+            {"selector": "id", "text": "__value", "type": "string"},
+            {"selector": "title", "text": "__text", "type": "string"}
+          ]
+        },
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": "",
+        "current": {"selected": false, "text": "All", "value": "$__all"},
+        "sort": 1
+      }
+    ]
+  },
   "time": {"from": "now-15m", "to": "now"},
   "timezone": "browser",
   "title": "NKN-Monitor – traceroute-graf",
   "uid": "nkn-traceroute-graph",
-  "version": 1
+  "version": 2
 }
