@@ -46,6 +46,12 @@ builtin_measurements:
     query_type: A
     interval_seconds: 300
 
+  - id: builtin-http-kob
+    type: http_get
+    target: https://kob.svenskakyrkan.se
+    interval_seconds: 60
+    expect_status: 200
+
 # Canary-mål används av klientens network context check (Iteration 2 senare del).
 canary_targets:
   - target: knet.ad.svenskakyrkan.se
