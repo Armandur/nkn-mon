@@ -280,6 +280,84 @@ async def get_graph_edges(
     return out
 
 
+def _build_traceroute_graph(storage) -> tuple[dict, dict]:
+    """Bygger nodes + edges från senaste traceroute-paths.
+
+    Returnerar (nodes_dict, edges_dict) där båda är keyade på id för dedup.
+    Probes blir noder med id=probe_id, varje unik hop-IP blir en nod
+    med id='hop:<ip>'. Edges går probe -> hop[0] -> hop[1] -> ...
+    """
+    nodes: dict[str, dict] = {}
+    edges: dict[tuple[str, str], dict] = {}
+
+    for pair in storage.list_traceroute_pairs():
+        probe_id = pair["client_id"]
+        site = pair.get("site_name") or probe_id[:8]
+        if probe_id not in nodes:
+            nodes[probe_id] = {
+                "id": probe_id,
+                "title": site,
+                "subtitle": "probe",
+                "mainstat": pair.get("hostname") or "",
+                "color": "green",
+                "nodeRadius": 50,
+            }
+
+        paths = storage.get_traceroute_paths(probe_id, pair["measurement_id"], limit=1)
+        if not paths or not paths[0].get("path"):
+            continue
+        hops = paths[0]["path"]
+        if not hops:
+            continue
+
+        for ip in hops:
+            hop_id = f"hop:{ip}"
+            if hop_id not in nodes:
+                nodes[hop_id] = {
+                    "id": hop_id,
+                    "title": ip,
+                    "subtitle": "hop",
+                    "mainstat": "",
+                    "color": "#7a8088",
+                    "nodeRadius": 22,
+                }
+
+        # Markera sista hop som destination (lila/cyan)
+        last_id = f"hop:{hops[-1]}"
+        if last_id in nodes and nodes[last_id]["subtitle"] == "hop":
+            nodes[last_id]["subtitle"] = "dest"
+            nodes[last_id]["color"] = "#a0b5ff"
+            nodes[last_id]["nodeRadius"] = 30
+
+        prev = probe_id
+        for idx, ip in enumerate(hops):
+            curr = f"hop:{ip}"
+            key = (prev, curr)
+            edges.setdefault(key, {
+                "id": f"{prev}->{curr}",
+                "source": prev,
+                "target": curr,
+                "mainstat": str(idx + 1),
+            })
+            prev = curr
+
+    return nodes, edges
+
+
+@router.get("/api/traceroute-graph/nodes")
+def get_traceroute_graph_nodes(request: Request, _: str = Depends(require_admin)) -> list[dict]:
+    nodes, _ = _build_traceroute_graph(request.app.state.storage)
+    return list(nodes.values())
+
+
+@router.get("/api/traceroute-graph/edges")
+def get_traceroute_graph_edges(request: Request, _: str = Depends(require_admin)) -> list[dict]:
+    nodes, edges = _build_traceroute_graph(request.app.state.storage)
+    valid_ids = set(nodes.keys())
+    # Säkerställ att alla edges refererar till existerande nodes
+    return [e for e in edges.values() if e["source"] in valid_ids and e["target"] in valid_ids]
+
+
 @router.get("/api/traceroute")
 def list_traceroutes(request: Request, _: str = Depends(require_admin)) -> dict:
     """Lista alla (probe, mått) som har traceroute-data, med senaste hops/timestamp."""

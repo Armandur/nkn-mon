@@ -1,0 +1,70 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "coordinator-graph"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 22, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {
+        "nodes": {"mainStatUnit": "string", "secondaryStatUnit": "string"},
+        "edges": {"mainStatUnit": "string"},
+        "layoutAlgorithm": "force",
+        "zoomMode": "cooperative"
+      },
+      "targets": [
+        {
+          "refId": "nodes",
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "coordinator-graph"},
+          "type": "json",
+          "source": "url",
+          "url": "/admin/api/traceroute-graph/nodes",
+          "url_options": {"method": "GET", "data": ""},
+          "format": "table",
+          "parser": "backend",
+          "root_selector": "",
+          "columns": [
+            {"selector": "id", "text": "id", "type": "string"},
+            {"selector": "title", "text": "title", "type": "string"},
+            {"selector": "subtitle", "text": "subtitle", "type": "string"},
+            {"selector": "mainstat", "text": "mainstat", "type": "string"},
+            {"selector": "color", "text": "color", "type": "string"},
+            {"selector": "nodeRadius", "text": "nodeRadius", "type": "number"}
+          ]
+        },
+        {
+          "refId": "edges",
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "coordinator-graph"},
+          "type": "json",
+          "source": "url",
+          "url": "/admin/api/traceroute-graph/edges",
+          "url_options": {"method": "GET", "data": ""},
+          "format": "table",
+          "parser": "backend",
+          "root_selector": "",
+          "columns": [
+            {"selector": "id", "text": "id", "type": "string"},
+            {"selector": "source", "text": "source", "type": "string"},
+            {"selector": "target", "text": "target", "type": "string"},
+            {"selector": "mainstat", "text": "mainstat", "type": "string"}
+          ]
+        }
+      ],
+      "title": "Traceroute-mesh (senaste path per probe×mätning)",
+      "type": "nodeGraph"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["nkn", "traceroute"],
+  "templating": {"list": []},
+  "time": {"from": "now-15m", "to": "now"},
+  "timezone": "browser",
+  "title": "NKN-Monitor – traceroute-graf",
+  "uid": "nkn-traceroute-graph",
+  "version": 1
+}
