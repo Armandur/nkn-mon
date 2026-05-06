@@ -19,10 +19,15 @@ Levande lista över vad som behöver göras härnäst. Färdiga iterationer doku
 - [x] ~~Lokal JSONL-buffring vid offline (7 d retention)~~
 - [x] ~~Reverse-DNS för traceroute-hops i klientens nät~~
 - [x] ~~Filtrering av virtuella nätadaptrar (Tailscale, Hyper-V, Docker, m.fl.)~~
-- [ ] **Scheduled Task-installer** (`client/install.ps1`) som kopierar skriptet till `%PROGRAMDATA%\NKN-Monitor` och registrerar Task som triggar vid uppstart eller logon. Behövs innan pilotutrullning. (skippad enligt användarens beslut tills vidare)
-- [ ] **`-LogFile`-parameter** så Scheduled Task-körningar skriver till fil för felsökning.
-- [ ] **Klient-uppdateringsmekanism** – heartbeat-svar talar om "ny version finns", klienten laddar ner och byter ut sig själv. Spec §4.7.
-- [ ] **Authenticode-signering** av klientbinär innan bredare utrullning.
+- [x] ~~`-LogFile`-parameter för Scheduled Task-körning~~
+- [x] ~~Klient-uppdateringsmekanism via heartbeat (Spec §4.7)~~
+- [x] ~~DPAPI-skydd för bearer-token i config.json~~
+- [x] ~~Klock-sync-koll mot serverns Date-header vid uppstart~~
+- [x] ~~UTF-8 BOM på skriptfilen (PS 5.1) + UTF-8 utan BOM på utdatafiler~~
+- [ ] **Scheduled Task-installer** (`client/install.ps1`) som kopierar skriptet till `%PROGRAMDATA%\NKN-Monitor` och registrerar Task som triggar vid uppstart eller logon. (skippad tills vidare per användarens beslut)
+- [ ] **Authenticode-signering** av klient innan bredare utrullning.
+- [ ] **Robust buffer-recovery** – korrupta JSON-rader till `.broken` istället för silent-skip.
+- [ ] **Snabb-shutdown vid Ctrl+C** så loop avslutas omedelbart istället för att vänta på nästa tick.
 
 ## Coordinator
 
@@ -30,8 +35,9 @@ Levande lista över vad som behöver göras härnäst. Färdiga iterationer doku
 - [x] ~~SQLite för probes + traceroute-paths~~
 - [x] ~~Anchor-stöd: `role`-kolumn, peer-tilldelning prioriterar anchors~~
 - [x] ~~Sweep av döda probes via admin-API~~
+- [x] ~~Per-probe delete via admin-UI~~
+- [x] ~~Klient-distribution: `/probe/client/version` + `/download`~~
 - [ ] **Wipe & re-register-flagga** – admin kan tvinga en specifik probe att registrera om sig vid nästa heartbeat.
-- [ ] **Per-probe delete** i admin-UI (idag finns sweep men inte delete på enskild id).
 - [ ] **User-defined mätningar per probe** (Iteration 4) – local admin lägger till egna mål för en specifik probe via admin-UI:t.
 - [ ] **Site-koncept** – flera probes per site, dela metadata (NKN-ranges, koordinater för geomap).
 - [ ] **Probe-koordinater (lat/lng)** för geomap-vy.
@@ -78,5 +84,6 @@ Levande lista över vad som behöver göras härnäst. Färdiga iterationer doku
 - [x] ~~"Senaste icmp-status" som tabell istället för stat (för många celler annars)~~
 - [x] ~~Formulär-UI för config + rå YAML-tab~~
 - [x] ~~Hjälptexter på varje config-sektion + per-mättyp-detaljer~~
-- [ ] Sweep-knappens bekräftelse-toast (idag bara sätter status).
-- [ ] Snyggare ålders-format för traceroute-historik (samma som probes-tabellen).
+- [x] ~~Sweep-knappens bekräftelse-toast~~
+- [x] ~~Snyggare ålders-format för traceroute-historik (samma som probes-tabellen)~~
+- [x] ~~"Öppna Grafana"-länk i admin-UI:ts header~~

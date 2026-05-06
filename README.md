@@ -33,11 +33,16 @@ Klienten är på v0.4 med fullt mätstöd.
 | Single-image (`Dockerfile`) för Unraid med s6-overlay | ✅ |
 | GitHub Actions bygger till `ghcr.io/armandur/nkn-mon` | ✅ |
 | GDPR-dokumentation | ✅ |
+| **Klient-uppdateringsmekanism via heartbeat** (auto-uppdatering med SHA-256-verifiering) | ✅ |
+| **Per-probe delete + sweep i admin-UI** | ✅ |
+| **DPAPI-skydd av token i klientens config.json** | ✅ |
+| **Klock-sync-koll** mot serverns Date-header vid uppstart | ✅ |
+| **`-LogFile`-parameter** för Scheduled Task-körning | ✅ |
 | iperf3-stöd (Iteration 4) | ⏳ |
 | User-defined mätningar per probe (Iteration 4) | ⏳ |
 | OIDC-login mot SVK IDP (Iteration 5) | ⏳ |
 | Authenticode-signering av klient (Iteration 5) | ⏳ |
-| Klient-uppdateringsmekanism via heartbeat (Iteration 5) | ⏳ |
+| Scheduled Task-installer | ⏳ |
 
 ## Snabbstart (utvecklingsmiljö)
 
@@ -136,8 +141,28 @@ Se [`SPECIFICATION.md` §12.6](./SPECIFICATION.md). Iteration 1 implementerar
 endast en delmängd – PowerShell-klient, peer-logik, NKN-klassificering m.m.
 tillkommer i senare iterationer.
 
+## Klient-uppdatering (auto)
+
+När en bumpad version (`# Version: X.Y.Z` i header + `$Script:NknClientVersion`)
+checks in och CI bygger ny single-image får alla probes erbjudandet vid
+nästa heartbeat:
+
+1. Coordinator parsar version + SHA-256 vid uppstart från
+   `/app/client/NknMonitor.ps1`
+2. Heartbeat-respons inkluderar `client_update` om probens version skiljer
+3. Klientens `Update-Self` laddar ner via auth:ad request, verifierar
+   SHA-256, ersätter filen på disk, exit 0
+4. Original-skriptet sparas som `.old` för manuell rollback
+5. Vid nästa körning (Scheduled Task eller manuell) kör nya versionen
+
+Endpoints (kräver bearer-token):
+- `GET /probe/client/version` – metadata om senaste klientversion
+- `GET /probe/client/download` – binär nedladdning med
+  `X-Client-Version` + `X-Client-SHA256`-headers
+
 ## Produktion
 
 `docker-compose.prod.yml` lägger till Caddy som reverse proxy och tar bort
 hot-reload + utåtexponerade interna portar. `.env.example` listar de
-miljövariabler som behöver sättas. Hosting-target är inte fastställt.
+miljövariabler som behöver sättas. För Unraid-pilot: använd
+nginx-proxy-manager och se `docs/unraid-deployment.md`.

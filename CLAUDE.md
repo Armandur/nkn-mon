@@ -133,6 +133,17 @@ nkn-mon/
   bort probes på samma /24 (= samma site), inkluderar alltid anchors,
   roterar resten med deterministisk hash av (probe_id + datum) så
   alla probes inte byter peers samma dag.
+- **Klient-uppdatering bygger på Version-header.** `client/NknMonitor.ps1`
+  börjar med `# Version: X.Y.Z` som coordinator parsar vid uppstart.
+  För att bumpa: ändra header + `$Script:NknClientVersion` (måste matcha)
+  + commit + push. CI bygger ny image, klienter får erbjudandet vid
+  nästa heartbeat. Update sker via auth:ad nedladdning + SHA-256-
+  verifiering.
+- **DPAPI för klient-token.** Klientens `config.json` innehåller token
+  med prefix `dpapi:` (base64-encrypted via Windows DPAPI CurrentUser-
+  scope). Plaintext finns bara i minnet under körning. Kräver
+  `Add-Type -AssemblyName System.Security` på PS 5.1 (.NET Framework
+  laddar inte den auto).
 
 ## Vanliga ändringar
 

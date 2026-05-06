@@ -137,6 +137,26 @@ docker exec <container-id> /usr/share/grafana/bin/grafana cli \
 `/data/config.yaml` kan editeras direkt på hosten – ändringar tas
 upp vid omstart eller hot-reload via admin-UI:t.
 
+## Klient-uppdatering
+
+När en ny version av `client/NknMonitor.ps1` har commit:ats och CI byggt
+en ny image får alla aktiva probes ett uppdateringserbjudande vid
+nästa heartbeat:
+
+1. På Unraid: pulla `:latest` och starta om container.
+2. Coordinator läser nya skriptet (med `# Version: X.Y.Z` i headern)
+   och beräknar SHA-256.
+3. Klienter med annan version får `client_update` i sin nästa heartbeat.
+4. Klienten `Update-Self` laddar ner skriptet (auth:at), verifierar
+   SHA-256 och ersätter på disk. Original sparas som `.old` för rollback.
+5. Klienten exit:ar efter ersättning. Med Scheduled Task som har
+   "Restart on failure" startar den automatiskt.
+
+Endpoints (kräver bearer-token):
+
+- `GET /probe/client/version` – metadata
+- `GET /probe/client/download` – binär PowerShell-fil
+
 ## Säkerhet
 
 - Admin-UI exponerar config + probes-listor. Skydda bakom NPM med
