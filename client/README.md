@@ -12,12 +12,19 @@ NKN-Monitor coordinator.
 - Stöder `icmp_ping` via `Test-Connection`
 - Skickar resultat till `/probe/results`
 
+**v0.3 (Iteration 2 leverans 2):**
+- Alla mättyper: icmp_ping, tcp_ping, dns_query, http_get
+- Heartbeat + network context check (publik IP, gateway, DNS, canaries)
+- Per-mått-intervall (respekterar `interval_seconds` i specen)
+- 401-handling: re-registrerar automatiskt om token blivit ogiltig
+- Lokal JSONL-buffring vid offline
+  (`%LOCALAPPDATA%\NKN-Monitor\buffer.jsonl`, 7 dagars retention)
+- Flushas automatiskt vid uppstart och efter varje lyckad rapport
+
 **Inte implementerat ännu:**
-- `tcp_ping` / `dns_query` / `http_get`
-- Heartbeat + network context check
-- Lokal SQLite-buffring vid offline
-- Per-mått-intervall (just nu kör allt på ett gemensamt intervall)
+- iperf3 (Iteration 4)
 - Scheduled Task-installer
+- Klient-uppdateringsmekanism via heartbeat-svar
 
 ## Krav
 
