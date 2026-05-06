@@ -250,6 +250,7 @@ function New-NknResult {
         category = $category
         peer_site = $peerSite
         sender_local_ip = $senderIp
+        traceroute_path_hosts = $null
     }
 }
 
@@ -385,6 +386,18 @@ function Invoke-HttpGet {
     return [pscustomobject]$result
 }
 
+function Resolve-HopHostname {
+    param([string]$Ip)
+    if ([string]::IsNullOrWhiteSpace($Ip)) { return $null }
+    try {
+        $entry = [System.Net.Dns]::GetHostEntry($Ip)
+        if ($entry.HostName -and $entry.HostName -ne $Ip) {
+            return $entry.HostName
+        }
+    } catch {}
+    return $null
+}
+
 function Invoke-Traceroute {
     param([pscustomobject]$Measurement)
 
@@ -394,6 +407,7 @@ function Invoke-Traceroute {
     $result.traceroute_hops = $null
     $result.traceroute_total_ms = $null
     $result.traceroute_path = @()
+    $result.traceroute_path_hosts = @()
 
     try {
         $tnc = Test-NetConnection -ComputerName $target -TraceRoute -Hops $maxHops `
@@ -408,6 +422,9 @@ function Invoke-Traceroute {
             $hops = @($tnc.TraceRoute | Where-Object { $_ })
             $result.traceroute_path = $hops
             $result.traceroute_hops = $hops.Count
+            # Reverse DNS från klientens nät - fångar interna NKN-namn
+            # som inte finns i publik DNS
+            $result.traceroute_path_hosts = @($hops | ForEach-Object { Resolve-HopHostname -Ip $_ })
         }
     } catch {
         Write-NknLog "WARN" "traceroute mot $target misslyckades: $_"

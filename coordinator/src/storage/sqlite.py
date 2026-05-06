@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS traceroute_paths (
     target TEXT,
     timestamp TEXT NOT NULL,
     path_json TEXT NOT NULL,
+    path_hosts_json TEXT,
     hops INTEGER,
     total_ms REAL,
     PRIMARY KEY (client_id, measurement_id, timestamp)
@@ -217,14 +218,21 @@ class Storage:
         path: list[str],
         hops: int | None,
         total_ms: float | None,
+        path_hosts: list[str | None] | None = None,
     ) -> None:
         import json
+        hosts_json = json.dumps(path_hosts) if path_hosts else None
         with self._lock, self._connect() as conn:
+            # Säkerställ att kolumnen finns (migration från äldre db)
+            cols = {row["name"] for row in conn.execute("PRAGMA table_info(traceroute_paths)")}
+            if "path_hosts_json" not in cols:
+                conn.execute("ALTER TABLE traceroute_paths ADD COLUMN path_hosts_json TEXT")
             conn.execute(
                 "INSERT OR REPLACE INTO traceroute_paths "
-                "(client_id, measurement_id, target, timestamp, path_json, hops, total_ms) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (client_id, measurement_id, target, timestamp, json.dumps(path), hops, total_ms),
+                "(client_id, measurement_id, target, timestamp, path_json, path_hosts_json, hops, total_ms) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (client_id, measurement_id, target, timestamp,
+                 json.dumps(path), hosts_json, hops, total_ms),
             )
             conn.execute(
                 "DELETE FROM traceroute_paths "
@@ -243,8 +251,10 @@ class Storage:
     ) -> list[dict]:
         import json
         with self._connect() as conn:
+            cols = {row["name"] for row in conn.execute("PRAGMA table_info(traceroute_paths)")}
+            extra_col = ", path_hosts_json" if "path_hosts_json" in cols else ""
             rows = conn.execute(
-                "SELECT timestamp, target, path_json, hops, total_ms "
+                f"SELECT timestamp, target, path_json, hops, total_ms{extra_col} "
                 "FROM traceroute_paths "
                 "WHERE client_id = ? AND measurement_id = ? "
                 "ORDER BY timestamp DESC LIMIT ?",
@@ -256,10 +266,18 @@ class Storage:
                 path = json.loads(r["path_json"])
             except (ValueError, TypeError):
                 path = []
+            hosts: list = []
+            try:
+                raw = r["path_hosts_json"] if "path_hosts_json" in r.keys() else None
+                if raw:
+                    hosts = json.loads(raw)
+            except (ValueError, TypeError, IndexError):
+                hosts = []
             out.append({
                 "timestamp": r["timestamp"],
                 "target": r["target"],
                 "path": path,
+                "path_hosts": hosts,
                 "hops": r["hops"],
                 "total_ms": r["total_ms"],
             })

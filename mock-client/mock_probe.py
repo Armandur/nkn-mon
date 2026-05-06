@@ -127,11 +127,23 @@ def _peer_rtt() -> tuple[float, float, float, float, bool]:
     return (max(0.1, avg - spread), avg, avg + spread, loss, loss < 100)
 
 
-def _traceroute_data() -> tuple[bool, int, float, list[str]]:
+_HOP_NAMES = ["core-sthlm", "core-gbg", "edge-malmo", "transit", "peering", "core-uppsala"]
+
+
+def _traceroute_data() -> tuple[bool, int, float, list[str], list[str | None]]:
     hops = random.randint(6, 14)
     total = random.uniform(20, 120)
-    path = [f"10.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,254)}" for _ in range(hops)]
-    return (random.random() > 0.05, hops, total, path)
+    path: list[str] = []
+    path_hosts: list[str | None] = []
+    for i in range(hops):
+        path.append(f"10.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,254)}")
+        # Cirka 60% av hops har "hostname" i mock-data
+        if random.random() < 0.6:
+            base = random.choice(_HOP_NAMES)
+            path_hosts.append(f"{base}-{i+1}.gc-net.example")
+        else:
+            path_hosts.append(None)
+    return (random.random() > 0.05, hops, total, path, path_hosts)
 
 
 async def run_probe(idx: int) -> None:
@@ -182,7 +194,7 @@ async def run_probe(idx: int) -> None:
                 peer_site = (m.get("extra") or {}).get("peer_site")
                 mtype = m.get("type")
                 if mtype == "traceroute":
-                    success, hops, total_ms, path = _traceroute_data()
+                    success, hops, total_ms, path, path_hosts = _traceroute_data()
                     results.append({
                         "measurement_id": m["id"],
                         "timestamp": _now_iso(),
@@ -194,6 +206,7 @@ async def run_probe(idx: int) -> None:
                         "traceroute_hops": hops if success else None,
                         "traceroute_total_ms": total_ms if success else None,
                         "traceroute_path": path if success else None,
+                        "traceroute_path_hosts": path_hosts if success else None,
                     })
                     continue
 

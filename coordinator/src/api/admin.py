@@ -346,74 +346,71 @@ def _build_traceroute_graph(
     return nodes, edges
 
 
-def _parse_client_filter(client_id: str) -> set[str] | None:
-    """Comma-separated ids -> set, tom string -> None (= alla)."""
-    if not client_id or client_id.strip() in {"", "*", ".*"}:
+def _parse_site_filter(site: str) -> set[str] | None:
+    """Comma-separated sitenamn -> set, tom/wildcard -> None (= alla)."""
+    if not site or site.strip() in {"", "*", ".*", "All", "$__all"}:
         return None
-    parts = {c.strip() for c in client_id.split(",") if c.strip()}
+    parts = {c.strip() for c in site.split(",") if c.strip() and c.strip() not in {"*", ".*"}}
     return parts or None
 
 
-@router.get("/api/traceroute-graph/probes")
-def list_traceroute_graph_probes(request: Request, _: str = Depends(require_admin)) -> list[dict]:
-    """Lista probes som har traceroute-data, lämplig som Grafana variable-källa."""
+@router.get("/api/traceroute-graph/sites")
+def list_traceroute_graph_sites(request: Request, _: str = Depends(require_admin)) -> list[dict]:
+    """Lista unika site-namn som har traceroute-data, för Grafana variable."""
     storage = request.app.state.storage
-    seen: dict[str, dict] = {}
-    for pair in storage.list_traceroute_pairs():
-        cid = pair["client_id"]
-        if cid not in seen:
-            seen[cid] = {
-                "id": cid,
-                "title": pair.get("site_name") or cid[:8],
-            }
-    return sorted(seen.values(), key=lambda p: p["title"].lower())
+    sites = sorted({
+        pair.get("site_name") or pair["client_id"][:8]
+        for pair in storage.list_traceroute_pairs()
+    })
+    return [{"site": s} for s in sites]
 
 
-async def _enrich_with_hostnames(request: Request, nodes: dict) -> None:
-    """Slår upp reverse-DNS för hop-noder och fyller in title/mainstat.
+def _apply_path_hosts_to_nodes(storage, nodes: dict, site_filter: set[str] | None) -> None:
+    """Berika hop-noder med hostname som klienten levererat (NKN-internt PTR).
 
-    Hop-noder börjar med id='hop:<ip>'. Om PTR-record finns, sätter vi
-    title=hostname och mainstat=ip; annars behålls befintliga värden.
+    Klienten gör Resolve-DnsName i sitt eget nätverk så även rent interna
+    NKN-namn som inte finns i publik DNS kommer fram. Coordinator gör
+    INTE egna DNS-uppslag (skulle missa interna namn om hen ligger externt).
     """
-    cache = getattr(request.app.state, "dns_cache", None)
-    if cache is None:
-        return
-    ips = [n["title"] for nid, n in nodes.items()
-           if nid.startswith("hop:") and n.get("subtitle") in ("hop", "dest")]
-    if not ips:
-        return
-    resolved = await cache.get_many(ips)
-    for nid, n in nodes.items():
-        if not nid.startswith("hop:"):
+    for pair in storage.list_traceroute_pairs():
+        site = pair.get("site_name") or pair["client_id"][:8]
+        if site_filter is not None and site not in site_filter:
             continue
-        ip = n["title"]
-        host = resolved.get(ip)
-        if host:
-            n["title"] = host
-            n["mainstat"] = ip
+        paths = storage.get_traceroute_paths(pair["client_id"], pair["measurement_id"], limit=1)
+        if not paths:
+            continue
+        latest = paths[0]
+        hosts = latest.get("path_hosts") or []
+        for ip, host in zip(latest.get("path") or [], hosts):
+            if not host:
+                continue
+            nid = f"hop:{ip}"
+            n = nodes.get(nid)
+            if n and n.get("title") == ip:
+                n["title"] = host
+                n["mainstat"] = ip
 
 
 @router.get("/api/traceroute-graph/nodes")
-async def get_traceroute_graph_nodes(
+def get_traceroute_graph_nodes(
     request: Request,
-    client_id: str = "",
+    site: str = "",
     _: str = Depends(require_admin),
 ) -> list[dict]:
-    nodes, _ = _build_traceroute_graph(
-        request.app.state.storage, client_filter=_parse_client_filter(client_id)
-    )
-    await _enrich_with_hostnames(request, nodes)
+    site_filter = _parse_site_filter(site)
+    nodes, _ = _build_traceroute_graph(request.app.state.storage, site_filter=site_filter)
+    _apply_path_hosts_to_nodes(request.app.state.storage, nodes, site_filter)
     return list(nodes.values())
 
 
 @router.get("/api/traceroute-graph/edges")
 def get_traceroute_graph_edges(
     request: Request,
-    client_id: str = "",
+    site: str = "",
     _: str = Depends(require_admin),
 ) -> list[dict]:
     nodes, edges = _build_traceroute_graph(
-        request.app.state.storage, client_filter=_parse_client_filter(client_id)
+        request.app.state.storage, site_filter=_parse_site_filter(site)
     )
     valid_ids = set(nodes.keys())
     return [e for e in edges.values() if e["source"] in valid_ids and e["target"] in valid_ids]
@@ -426,7 +423,7 @@ def list_traceroutes(request: Request, _: str = Depends(require_admin)) -> dict:
 
 
 @router.get("/api/traceroute/{client_id}/{measurement_id}")
-async def get_traceroute_history(
+def get_traceroute_history(
     client_id: str,
     measurement_id: str,
     request: Request,
@@ -434,13 +431,6 @@ async def get_traceroute_history(
     _: str = Depends(require_admin),
 ) -> dict:
     paths = request.app.state.storage.get_traceroute_paths(client_id, measurement_id, limit=limit)
-    cache = getattr(request.app.state, "dns_cache", None)
-    if cache is not None and paths:
-        all_ips = {ip for p in paths for ip in (p.get("path") or [])}
-        if all_ips:
-            resolved = await cache.get_many(list(all_ips))
-            for p in paths:
-                p["path_hosts"] = [resolved.get(ip) for ip in (p.get("path") or [])]
     return {
         "client_id": client_id,
         "measurement_id": measurement_id,
