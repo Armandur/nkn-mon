@@ -110,6 +110,7 @@ class MeasurementResult(BaseModel):
     target: str
     success: bool
     site: str | None = None
+    category: str = "builtin"
 
     # icmp_ping
     rtt_ms_min: float | None = None

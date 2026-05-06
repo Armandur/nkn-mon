@@ -225,12 +225,17 @@ function Get-MeasurementExtra {
 
 function New-NknResult {
     param([pscustomobject]$Measurement, [string]$Type)
+    $category = "builtin"
+    if ($Measurement.PSObject.Properties["category"] -and $Measurement.category) {
+        $category = [string]$Measurement.category
+    }
     return [ordered]@{
         measurement_id = $Measurement.id
         timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
         type = $Type
         target = $Measurement.target
         success = $false
+        category = $category
     }
 }
 

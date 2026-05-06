@@ -170,7 +170,8 @@ async def run_probe(idx: int) -> None:
 
             results = []
             for m in ping_targets:
-                if m.get("category") == "peer":
+                category = m.get("category", "builtin")
+                if category == "peer":
                     rtt_min, rtt_avg, rtt_max, loss, success = _peer_rtt()
                 else:
                     rtt_min, rtt_avg, rtt_max, loss, success = _sample_rtt()
@@ -185,6 +186,7 @@ async def run_probe(idx: int) -> None:
                     "rtt_ms_max": rtt_max if success else None,
                     "packet_loss_pct": loss,
                     "site": meta["site"],
+                    "category": category,
                 })
 
             if results:

@@ -35,7 +35,7 @@ def _common_tags(client_id: str, r) -> dict[str, str]:
         "measurement_id": r.measurement_id,
         "target": r.target,
         "site": r.site or "",
-        "target_category": "builtin",
+        "target_category": getattr(r, "category", None) or "builtin",
     }
 
 
