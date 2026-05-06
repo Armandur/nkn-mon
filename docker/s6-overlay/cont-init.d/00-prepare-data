@@ -23,6 +23,20 @@ if [ -z "$(ls -A /data/grafana/dashboards 2>/dev/null)" ]; then
     cp -r /usr/share/grafana/dashboards-default/. /data/grafana/dashboards/
 fi
 
+# Bundlade plugins (yesoreyeram-infinity-datasource) installeras i build-tid
+# i plugins-bundled. Grafana läser dock från /data/grafana/plugins (volymen)
+# pga GF_PATHS_PLUGINS. Kopiera dem dit vid första start om de saknas.
+if [ -d /usr/share/grafana/plugins-bundled ]; then
+    for plugin_dir in /usr/share/grafana/plugins-bundled/*/; do
+        [ -d "$plugin_dir" ] || continue
+        plugin_name=$(basename "$plugin_dir")
+        if [ ! -d "/data/grafana/plugins/$plugin_name" ]; then
+            echo "[init] Kopierar plugin $plugin_name -> /data/grafana/plugins/"
+            cp -r "$plugin_dir" "/data/grafana/plugins/$plugin_name"
+        fi
+    done
+fi
+
 # Provisioneringen pekar på /var/lib/grafana/dashboards (samma som dev-compose).
 # I single-image vill vi dock persistera under /data, så symlinka hit.
 mkdir -p /var/lib/grafana
