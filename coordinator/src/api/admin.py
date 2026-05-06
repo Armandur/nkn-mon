@@ -60,6 +60,84 @@ def get_config(_: str = Depends(require_admin)) -> str:
     return _config_path().read_text(encoding="utf-8")
 
 
+@router.get("/api/config.json")
+def get_config_json(_: str = Depends(require_admin)) -> dict:
+    """Strukturerat config-objekt för formulär-UI:t."""
+    raw = yaml.safe_load(_config_path().read_text(encoding="utf-8")) or {}
+    return {
+        "heartbeat_interval_seconds": int(raw.get("heartbeat_interval_seconds", 300)),
+        "spec_validity_seconds": int(raw.get("spec_validity_seconds", 3600)),
+        "peer_count_per_probe": int(raw.get("peer_count_per_probe", 3)),
+        "peer_interval_seconds": int(raw.get("peer_interval_seconds", 300)),
+        "registration_keys": list(raw.get("registration_keys", [])),
+        "nkn_public_ip_ranges": list(raw.get("nkn_public_ip_ranges", [])),
+        "canary_targets": list(raw.get("canary_targets", [])),
+        "builtin_measurements": list(raw.get("builtin_measurements", [])),
+    }
+
+
+@router.put("/api/config.json")
+async def put_config_json(request: Request, _: str = Depends(require_admin)) -> dict:
+    """Tar emot strukturerat config-objekt, validerar och serialiserar till YAML."""
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="payload måste vara ett objekt")
+
+    try:
+        new_cfg = CoordinatorConfig(
+            heartbeat_interval_seconds=int(payload.get("heartbeat_interval_seconds", 300)),
+            spec_validity_seconds=int(payload.get("spec_validity_seconds", 3600)),
+            registration_keys=list(payload.get("registration_keys", [])),
+            builtin_measurements=list(payload.get("builtin_measurements", [])),
+            canary_targets=list(payload.get("canary_targets", [])),
+            nkn_public_ip_ranges=list(payload.get("nkn_public_ip_ranges", [])),
+            peer_count_per_probe=int(payload.get("peer_count_per_probe", 3)),
+            peer_interval_seconds=int(payload.get("peer_interval_seconds", 300)),
+        )
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"Ogiltig config: {exc}") from exc
+
+    if not new_cfg.registration_keys:
+        raise HTTPException(status_code=400, detail="Minst en registration_key krävs")
+    for m in new_cfg.builtin_measurements:
+        if "id" not in m or "type" not in m or "target" not in m:
+            raise HTTPException(
+                status_code=400, detail=f"Måttet saknar id/type/target: {m}"
+            )
+
+    # Serialisera tillbaka till YAML (utan kommentarer - rå-fliken bevarar dem)
+    yaml_text = yaml.safe_dump(
+        {
+            "heartbeat_interval_seconds": new_cfg.heartbeat_interval_seconds,
+            "spec_validity_seconds": new_cfg.spec_validity_seconds,
+            "peer_count_per_probe": new_cfg.peer_count_per_probe,
+            "peer_interval_seconds": new_cfg.peer_interval_seconds,
+            "registration_keys": new_cfg.registration_keys,
+            "builtin_measurements": new_cfg.builtin_measurements,
+            "canary_targets": new_cfg.canary_targets,
+            "nkn_public_ip_ranges": new_cfg.nkn_public_ip_ranges,
+        },
+        sort_keys=False,
+        allow_unicode=True,
+        default_flow_style=False,
+    )
+
+    _config_path().write_text(yaml_text, encoding="utf-8")
+    request.app.state.config = new_cfg
+    request.app.state.config_reloaded_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    logger.info(
+        "Config uppdaterad via formulär: %d mått, %d reg-nycklar",
+        len(new_cfg.builtin_measurements),
+        len(new_cfg.registration_keys),
+    )
+    return {
+        "status": "ok",
+        "measurements": len(new_cfg.builtin_measurements),
+        "registration_keys": len(new_cfg.registration_keys),
+        "reloaded_at": request.app.state.config_reloaded_at,
+    }
+
+
 @router.put("/api/config")
 async def put_config(request: Request, _: str = Depends(require_admin)) -> dict:
     raw = (await request.body()).decode("utf-8")
@@ -588,6 +666,84 @@ _ADMIN_HTML = r"""<!DOCTYPE html>
   .age-fresh { color: var(--success); }
   .age-stale { color: var(--warn); }
   .age-dead { color: var(--error); }
+  .tabs {
+    display: flex; gap: 4px;
+    border-bottom: 1px solid var(--border);
+    margin: -4px -16px 16px;
+    padding: 0 16px;
+  }
+  .tab {
+    padding: 8px 14px;
+    background: transparent; border: none;
+    color: var(--muted); cursor: pointer;
+    font-size: 13px; font-weight: 500;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+  .form-section { margin-bottom: 24px; }
+  .form-section h3 {
+    margin: 0 0 8px 0; font-size: 13px; font-weight: 600;
+    color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .form-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+  }
+  .form-grid label {
+    display: flex; flex-direction: column; gap: 4px;
+    font-size: 12px; color: var(--muted);
+  }
+  .form-grid input, .form-grid select {
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 3px;
+    padding: 6px 8px; font-size: 13px; font-family: inherit;
+  }
+  .form-grid input:focus, .form-grid select:focus {
+    outline: 1px solid var(--accent); border-color: var(--accent);
+  }
+  .list-row {
+    display: flex; gap: 8px; align-items: center;
+    margin-bottom: 6px;
+  }
+  .list-row input { flex: 1; }
+  .list-row button { padding: 4px 8px; font-size: 12px; }
+  .list-add {
+    background: transparent; color: var(--accent);
+    border: 1px dashed var(--border); border-radius: 3px;
+    padding: 6px 12px; font-size: 12px; font-weight: 500;
+    cursor: pointer;
+  }
+  .list-add:hover { border-color: var(--accent); background: var(--surface); }
+  .meas-card {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 4px; padding: 12px; margin-bottom: 8px;
+  }
+  .meas-card-head {
+    display: flex; gap: 8px; align-items: center;
+    margin-bottom: 8px;
+  }
+  .meas-card-head .meas-id {
+    flex: 1; font-weight: 600;
+    font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+    font-size: 13px;
+  }
+  .meas-card-head .meas-type {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 3px; padding: 2px 8px;
+    font-size: 11px; text-transform: uppercase;
+    color: var(--accent);
+  }
+  .meas-fields {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 8px;
+  }
   .tr-row { cursor: pointer; }
   .tr-row:hover { background: rgba(255,255,255,0.03); }
   .tr-detail {
@@ -615,14 +771,63 @@ _ADMIN_HTML = r"""<!DOCTYPE html>
 <main>
   <div class="grid">
     <section class="card">
-      <h2>config.yaml</h2>
-      <textarea id="editor" spellcheck="false" autocomplete="off"></textarea>
-      <div class="toolbar">
-        <button id="save">Spara &amp; reload</button>
-        <button class="secondary" id="reload">Hämta från disk</button>
-        <span id="status" class="status">Laddar…</span>
+      <h2>Konfiguration</h2>
+      <div class="tabs">
+        <button class="tab active" data-tab="form">Formulär</button>
+        <button class="tab" data-tab="yaml">YAML (rå)</button>
       </div>
-      <p class="hint"><kbd>Ctrl</kbd>+<kbd>S</kbd> sparar. Filen valideras innan den skrivs.</p>
+
+      <div class="tab-panel active" id="tab-form">
+        <div class="form-section">
+          <h3>Globala värden</h3>
+          <div class="form-grid">
+            <label>Heartbeat-intervall (s)<input type="number" id="f-heartbeat" min="30"></label>
+            <label>Spec-giltighet (s)<input type="number" id="f-spec-validity" min="30"></label>
+            <label>Peers per probe<input type="number" id="f-peer-count" min="0" max="10"></label>
+            <label>Peer-mätintervall (s)<input type="number" id="f-peer-interval" min="60"></label>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3>Registreringsnycklar</h3>
+          <div id="f-reg-keys"></div>
+          <button type="button" class="list-add" data-add="reg-keys">+ lägg till nyckel</button>
+        </div>
+
+        <div class="form-section">
+          <h3>NKN publika IP-ranges (CIDR)</h3>
+          <div id="f-nkn-ranges"></div>
+          <button type="button" class="list-add" data-add="nkn-ranges">+ lägg till range</button>
+        </div>
+
+        <div class="form-section">
+          <h3>Canary-mål</h3>
+          <div id="f-canary"></div>
+          <button type="button" class="list-add" data-add="canary">+ lägg till canary</button>
+        </div>
+
+        <div class="form-section">
+          <h3>Builtin-mätningar</h3>
+          <div id="f-measurements"></div>
+          <button type="button" class="list-add" data-add="measurement">+ lägg till mätning</button>
+        </div>
+
+        <div class="toolbar">
+          <button id="form-save">Spara &amp; reload</button>
+          <button class="secondary" id="form-reload">Hämta från disk</button>
+          <span id="form-status" class="status">Laddar…</span>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tab-yaml">
+        <textarea id="editor" spellcheck="false" autocomplete="off"></textarea>
+        <div class="toolbar">
+          <button id="save">Spara &amp; reload</button>
+          <button class="secondary" id="reload">Hämta från disk</button>
+          <span id="status" class="status">Laddar…</span>
+        </div>
+        <p class="hint"><kbd>Ctrl</kbd>+<kbd>S</kbd> sparar. Bevarar kommentarer. Formulär-fliken serialiserar tillbaka utan kommentarer.</p>
+      </div>
     </section>
     <aside class="card">
       <h2>Status</h2>
@@ -824,9 +1029,242 @@ reloadBtn.addEventListener("click", loadConfig);
 document.addEventListener("keydown", (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === "s") {
     e.preventDefault();
-    saveConfig();
+    const activeTab = document.querySelector(".tab.active").dataset.tab;
+    if (activeTab === "form") saveFormConfig(); else saveConfig();
   }
 });
+
+// --- Tab-switch ---
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
+  });
+});
+
+// --- Formulär: rendera + spara ---
+const MEAS_TYPES = ["icmp_ping", "tcp_ping", "dns_query", "http_get", "traceroute"];
+const TYPE_FIELDS = {
+  icmp_ping: [{k: "packet_count", label: "Paket-count", type: "number"}, {k: "resolve_on_probe", label: "Resolve på probe", type: "checkbox"}],
+  tcp_ping: [{k: "port", label: "Port", type: "number"}, {k: "timeout_ms", label: "Timeout (ms)", type: "number"}],
+  dns_query: [{k: "query_name", label: "Query name", type: "text"}, {k: "query_type", label: "Query type", type: "text", default: "A"}],
+  http_get: [{k: "expect_status", label: "Förväntad status", type: "number", default: 200}, {k: "timeout_seconds", label: "Timeout (s)", type: "number"}],
+  traceroute: [{k: "max_hops", label: "Max hops", type: "number", default: 30}],
+};
+
+function setFormStatus(text, kind) {
+  const el = document.getElementById("form-status");
+  el.textContent = text;
+  el.className = "status" + (kind ? " " + kind : "");
+}
+
+async function loadFormConfig() {
+  setFormStatus("Hämtar…");
+  const r = await fetch("/admin/api/config.json");
+  if (!r.ok) { setFormStatus("Fel: " + r.status, "error"); return; }
+  const cfg = await r.json();
+
+  document.getElementById("f-heartbeat").value = cfg.heartbeat_interval_seconds;
+  document.getElementById("f-spec-validity").value = cfg.spec_validity_seconds;
+  document.getElementById("f-peer-count").value = cfg.peer_count_per_probe;
+  document.getElementById("f-peer-interval").value = cfg.peer_interval_seconds;
+
+  renderStringList("f-reg-keys", cfg.registration_keys, "registreringsnyckel");
+  renderStringList("f-nkn-ranges", cfg.nkn_public_ip_ranges, "CIDR (t.ex. 195.67.168.0/22)");
+  renderCanaryList(cfg.canary_targets || []);
+  renderMeasurementsList(cfg.builtin_measurements || []);
+
+  setFormStatus("Laddad", "success");
+}
+
+function renderStringList(containerId, items, placeholder) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = items.map((v, i) => `<div class="list-row">
+    <input type="text" data-list="${containerId}" data-idx="${i}" value="${escapeHtml(v)}" placeholder="${placeholder}">
+    <button class="secondary" data-rm="${containerId}" data-idx="${i}">x</button>
+  </div>`).join("");
+  el.querySelectorAll("[data-rm]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const list = btn.dataset.rm;
+      const idx = parseInt(btn.dataset.idx, 10);
+      const current = collectStringList(list);
+      current.splice(idx, 1);
+      renderStringList(list, current, placeholder);
+    });
+  });
+}
+
+function collectStringList(containerId) {
+  return Array.from(document.querySelectorAll(`#${containerId} input[data-list]`))
+    .map(inp => inp.value.trim()).filter(v => v);
+}
+
+function renderCanaryList(items) {
+  const el = document.getElementById("f-canary");
+  el.innerHTML = items.map((c, i) => `<div class="list-row">
+    <input type="text" data-canary-target="${i}" value="${escapeHtml(c.target || '')}" placeholder="target (t.ex. ad-1.intern)">
+    <input type="text" data-canary-desc="${i}" value="${escapeHtml(c.description || '')}" placeholder="beskrivning">
+    <button class="secondary" data-rm-canary="${i}">x</button>
+  </div>`).join("");
+  el.querySelectorAll("[data-rm-canary]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt(btn.dataset.rmCanary, 10);
+      const current = collectCanaryList();
+      current.splice(idx, 1);
+      renderCanaryList(current);
+    });
+  });
+}
+
+function collectCanaryList() {
+  const ids = new Set();
+  document.querySelectorAll("#f-canary input[data-canary-target]").forEach(inp => ids.add(inp.dataset.canaryTarget));
+  return Array.from(ids).map(i => ({
+    target: document.querySelector(`#f-canary input[data-canary-target="${i}"]`).value.trim(),
+    description: document.querySelector(`#f-canary input[data-canary-desc="${i}"]`).value.trim(),
+  })).filter(c => c.target);
+}
+
+function renderMeasurementsList(items) {
+  const el = document.getElementById("f-measurements");
+  el.innerHTML = items.map((m, i) => renderMeasurementCard(m, i)).join("");
+  attachMeasurementHandlers();
+}
+
+function renderMeasurementCard(m, idx) {
+  const type = m.type || "icmp_ping";
+  const knownKeys = new Set(["id", "type", "target", "interval_seconds", "category"]);
+  const extra = Object.fromEntries(Object.entries(m).filter(([k]) => !knownKeys.has(k)));
+
+  let typeFields = "";
+  for (const f of (TYPE_FIELDS[type] || [])) {
+    const val = extra[f.k] !== undefined ? extra[f.k] : (f.default !== undefined ? f.default : "");
+    if (f.type === "checkbox") {
+      typeFields += `<label>${f.label}<input type="checkbox" data-meas="${idx}" data-extra="${f.k}" ${val ? "checked" : ""}></label>`;
+    } else {
+      typeFields += `<label>${f.label}<input type="${f.type}" data-meas="${idx}" data-extra="${f.k}" value="${escapeHtml(String(val))}"></label>`;
+    }
+  }
+
+  return `<div class="meas-card" data-meas-card="${idx}">
+    <div class="meas-card-head">
+      <span class="meas-type">${escapeHtml(type)}</span>
+      <span class="meas-id">${escapeHtml(m.id || "(nytt mått)")}</span>
+      <button class="secondary" data-rm-meas="${idx}">ta bort</button>
+    </div>
+    <div class="meas-fields">
+      <label>id<input type="text" data-meas="${idx}" data-base="id" value="${escapeHtml(m.id || '')}"></label>
+      <label>typ<select data-meas="${idx}" data-base="type">
+        ${MEAS_TYPES.map(t => `<option value="${t}"${t === type ? ' selected' : ''}>${t}</option>`).join("")}
+      </select></label>
+      <label>target<input type="text" data-meas="${idx}" data-base="target" value="${escapeHtml(m.target || '')}"></label>
+      <label>interval (s)<input type="number" data-meas="${idx}" data-base="interval_seconds" value="${m.interval_seconds || 60}"></label>
+      ${typeFields}
+    </div>
+  </div>`;
+}
+
+function attachMeasurementHandlers() {
+  document.querySelectorAll("[data-rm-meas]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt(btn.dataset.rmMeas, 10);
+      const current = collectMeasurements();
+      current.splice(idx, 1);
+      renderMeasurementsList(current);
+    });
+  });
+  document.querySelectorAll('select[data-base="type"]').forEach(sel => {
+    sel.addEventListener("change", () => {
+      // Vid typ-byte måste vi rendera om kortet med rätt extra-fält
+      const current = collectMeasurements();
+      renderMeasurementsList(current);
+    });
+  });
+}
+
+function collectMeasurements() {
+  const cards = document.querySelectorAll("[data-meas-card]");
+  return Array.from(cards).map(card => {
+    const idx = card.dataset.measCard;
+    const m = {};
+    card.querySelectorAll(`[data-meas="${idx}"][data-base]`).forEach(inp => {
+      const key = inp.dataset.base;
+      let val = inp.value.trim();
+      if (key === "interval_seconds") val = parseInt(val, 10) || 60;
+      m[key] = val;
+    });
+    card.querySelectorAll(`[data-meas="${idx}"][data-extra]`).forEach(inp => {
+      const key = inp.dataset.extra;
+      let val;
+      if (inp.type === "checkbox") val = inp.checked;
+      else if (inp.type === "number") val = parseInt(inp.value, 10);
+      else val = inp.value.trim();
+      if (val !== "" && val !== undefined && !Number.isNaN(val)) m[key] = val;
+    });
+    return m;
+  }).filter(m => m.id && m.type && m.target);
+}
+
+document.querySelectorAll(".list-add").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const target = btn.dataset.add;
+    if (target === "reg-keys") {
+      const current = collectStringList("f-reg-keys");
+      current.push("");
+      renderStringList("f-reg-keys", current, "registreringsnyckel");
+    } else if (target === "nkn-ranges") {
+      const current = collectStringList("f-nkn-ranges");
+      current.push("");
+      renderStringList("f-nkn-ranges", current, "CIDR (t.ex. 195.67.168.0/22)");
+    } else if (target === "canary") {
+      const current = collectCanaryList();
+      current.push({target: "", description: ""});
+      renderCanaryList(current);
+    } else if (target === "measurement") {
+      const current = collectMeasurements();
+      current.push({id: "nytt-matt-" + Date.now(), type: "icmp_ping", target: "", interval_seconds: 60});
+      renderMeasurementsList(current);
+    }
+  });
+});
+
+async function saveFormConfig() {
+  setFormStatus("Sparar…");
+  const payload = {
+    heartbeat_interval_seconds: parseInt(document.getElementById("f-heartbeat").value, 10),
+    spec_validity_seconds: parseInt(document.getElementById("f-spec-validity").value, 10),
+    peer_count_per_probe: parseInt(document.getElementById("f-peer-count").value, 10),
+    peer_interval_seconds: parseInt(document.getElementById("f-peer-interval").value, 10),
+    registration_keys: collectStringList("f-reg-keys"),
+    nkn_public_ip_ranges: collectStringList("f-nkn-ranges"),
+    canary_targets: collectCanaryList(),
+    builtin_measurements: collectMeasurements(),
+  };
+  try {
+    const r = await fetch("/admin/api/config.json", {
+      method: "PUT",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+      const txt = await r.text();
+      setFormStatus("Fel: " + txt, "error");
+    } else {
+      const j = await r.json();
+      setFormStatus(`Sparad. ${j.measurements} mått, ${j.registration_keys} nycklar`, "success");
+      refreshStatus();
+    }
+  } catch (e) {
+    setFormStatus("Fel: " + e.message, "error");
+  }
+}
+
+document.getElementById("form-save").addEventListener("click", saveFormConfig);
+document.getElementById("form-reload").addEventListener("click", loadFormConfig);
+
+loadFormConfig();
 
 async function refreshTraceroutes() {
   const r = await fetch("/admin/api/traceroute");

@@ -1,78 +1,47 @@
-# Centralt konfigställe för NKN-Monitor coordinator.
-#
-# Kan editeras direkt på disk eller via admin-UI på /admin/. Hot-reload sker
-# automatiskt när admin-UI sparar; vid manuell editering på disk krävs omstart.
-
 heartbeat_interval_seconds: 300
-# Hur länge en utlevererad spec gäller. Klienter respekterar detta och hämtar
-# ny spec efter denna tid. För dev: håll lågt (60-120s) så config-ändringar
-# slår igenom snabbt. För prod: höj till några minuter eller mer.
 spec_validity_seconds: 120
-
-# Peer-mätning (Iteration 3): coordinator tilldelar varje probe N andra
-# probes på olika /24 att mäta mot. Roterar dagligen.
 peer_count_per_probe: 3
 peer_interval_seconds: 300
-
-# Tillåtna registreringsnycklar. Probes använder en av dessa vid första /probe/register.
-# Rotera vid behov; gamla nycklar kan tas bort utan att redan registrerade probes
-# påverkas (de använder sin client_token därefter).
 registration_keys:
-  - dev-registration-key
-
-# Builtin-mål som distribueras till alla probes. id måste vara unikt.
-# Iteration 2: klienten stöder bara type=icmp_ping. Andra typer skickas ut i specen
-# men klienten ignorerar dem tills stöd läggs till.
+- dev-registration-key
 builtin_measurements:
-  - id: builtin-ping-ad
-    type: icmp_ping
-    target: knet.ad.svenskakyrkan.se
-    interval_seconds: 60
-    packet_count: 4
-    resolve_on_probe: true
-
-  - id: builtin-ping-gateway
-    type: icmp_ping
-    target: 1.1.1.1
-    interval_seconds: 60
-    packet_count: 4
-    resolve_on_probe: false
-
-  - id: builtin-tcp-smtp
-    type: tcp_ping
-    target: smtp.svenskakyrkan.se
-    port: 25
-    interval_seconds: 60
-
-  - id: builtin-dns
-    type: dns_query
-    target: 10.60.0.11
-    query_name: kornet.svenskakyrkan.se
-    query_type: A
-    interval_seconds: 300
-
-  - id: builtin-http-kob
-    type: http_get
-    target: https://kob.svenskakyrkan.se
-    interval_seconds: 60
-    expect_status: 200
-
-
-  - id: builtin-traceroute-kob
-    type: traceroute
-    target: kob.svenskakyrkan.se
-    interval_seconds: 600
-    max_hops: 20
-
-# Canary-mål används av klientens network context check (Iteration 2 senare del).
+- id: builtin-ping-ad
+  type: icmp_ping
+  target: knet.ad.svenskakyrkan.se
+  interval_seconds: 60
+  packet_count: 4
+  resolve_on_probe: true
+- id: builtin-ping-gateway
+  type: icmp_ping
+  target: 1.1.1.1
+  interval_seconds: 60
+  packet_count: 4
+  resolve_on_probe: false
+- id: builtin-tcp-smtp
+  type: tcp_ping
+  target: smtp.svenskakyrkan.se
+  port: 25
+  interval_seconds: 60
+- id: builtin-dns
+  type: dns_query
+  target: 10.60.0.11
+  query_name: kornet.svenskakyrkan.se
+  query_type: A
+  interval_seconds: 300
+- id: builtin-http-kob
+  type: http_get
+  target: https://kob.svenskakyrkan.se
+  interval_seconds: 60
+  expect_status: 200
+- id: builtin-traceroute-kob
+  type: traceroute
+  target: kob.svenskakyrkan.se
+  interval_seconds: 600
+  max_hops: 20
 canary_targets:
-  - target: knet.ad.svenskakyrkan.se
-    description: AD-DC
-  - target: smtp.svenskakyrkan.se
-    description: SMTP-server
-
-# IP-ranges (CIDR) som klassificeras som NKN. svky-out-24 hörde till 195.67.168.x;
-# /22 inkluderar 195.67.168-171.x vilket täcker eventuella systerblock. Justera när
-# du vet exakt vilka ranges Global Connect tilldelat NKN.
+- target: knet.ad.svenskakyrkan.se
+  description: AD-DC
+- target: smtp.svenskakyrkan.se
+  description: SMTP-server
 nkn_public_ip_ranges:
-  - 195.67.168.0/22
+- 195.67.168.0/22
