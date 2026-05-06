@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     NKN-Monitor probe-klient v0.1 (PowerShell).
 
@@ -38,6 +38,11 @@
     Hoppa över interaktiva prompter. Använd vid Scheduled Task-körning där
     skriptet kör utan terminal. Default-värden används utan frågor.
 
+.PARAMETER LogFile
+    Skriv loggrader även till denna fil utöver konsolen. Användbart vid
+    Scheduled Task-körning där stdout försvinner. Filen roteras inte
+    automatiskt - använd Windows Task Scheduler eller logrotate för det.
+
 .EXAMPLE
     # Interaktivt, med prompter för metadata vid första registrering
     .\NknMonitor.ps1 -CoordinatorUrl http://ubuntu-ai:8200
@@ -59,6 +64,7 @@ param(
     [string]$SiteType = "",
     [string]$Notes = "",
     [string]$ConfigPath = (Join-Path $env:LOCALAPPDATA "NKN-Monitor\config.json"),
+    [string]$LogFile = "",
     [switch]$Once,
     [switch]$NonInteractive
 )
@@ -88,18 +94,94 @@ $Global:NknPrimaryLocalIp = $null
 function Write-NknLog {
     param([string]$Level, [string]$Message)
     $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "$ts $Level $Message"
+    $line = "$ts $Level $Message"
+    Write-Host $line
+    if ($LogFile) {
+        try {
+            $dir = Split-Path -Parent $LogFile
+            if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
+            $sw = [System.IO.StreamWriter]::new($LogFile, $true, [System.Text.UTF8Encoding]::new($false))
+            try { $sw.WriteLine($line) } finally { $sw.Close() }
+        } catch {}
+    }
+}
+
+function Protect-Token {
+    # DPAPI-skydd för bearer-token: bara samma user på samma maskin kan dekryptera.
+    # Om DPAPI inte är tillgänglig (icke-Windows, äldre PS) faller vi tillbaka på
+    # klartext men loggar varning.
+    param([string]$Plain)
+    if (-not $Plain) { return "" }
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($Plain)
+        $protected = [System.Security.Cryptography.ProtectedData]::Protect(
+            $bytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser
+        )
+        return "dpapi:" + [Convert]::ToBase64String($protected)
+    } catch {
+        Write-NknLog "WARN" "DPAPI-kryptering ej tillgänglig - token sparas i klartext"
+        return $Plain
+    }
+}
+
+function Unprotect-Token {
+    param([string]$Stored)
+    if (-not $Stored) { return "" }
+    if (-not $Stored.StartsWith("dpapi:")) { return $Stored }  # gammalt klartext-format
+    try {
+        $b64 = $Stored.Substring(6)
+        $bytes = [Convert]::FromBase64String($b64)
+        $plain = [System.Security.Cryptography.ProtectedData]::Unprotect(
+            $bytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser
+        )
+        return [System.Text.Encoding]::UTF8.GetString($plain)
+    } catch {
+        Write-NknLog "WARN" "Kunde inte dekryptera token: $_"
+        return ""
+    }
+}
+
+function Test-ClockSync {
+    # Klient-klocka som ligger >5 min fel mot coordinator gör att resultat
+    # avvisas (timestamp utanför 7-dagarsfönstret blir extremt sällan men
+    # är ofta första symtomet på en glömd tidssync). Heartbeat-svaret
+    # innehåller inte serverklocka, så vi kollar HTTP Date-headern istället.
+    param([string]$BaseUrl)
+    try {
+        $resp = Invoke-WebRequest -Uri "$BaseUrl/healthz" -UseBasicParsing -TimeoutSec 5
+        $dateHdr = $resp.Headers["Date"]
+        if (-not $dateHdr) { return }
+        $serverTime = [datetime]::Parse($dateHdr).ToUniversalTime()
+        $localTime = (Get-Date).ToUniversalTime()
+        $diff = [Math]::Abs(($localTime - $serverTime).TotalSeconds)
+        if ($diff -gt 60) {
+            Write-NknLog "WARN" "Klockskillnad mot server: ${diff}s. Synka med w32tm /resync om felet är permanent."
+        }
+    } catch {}
 }
 
 function Read-LocalConfig {
     if (Test-Path $ConfigPath) {
         try {
-            return Get-Content -Raw -Path $ConfigPath | ConvertFrom-Json
+            $cfg = Get-Content -Raw -Path $ConfigPath | ConvertFrom-Json
+            # Migrera gammal klartext-token: kryptera vid nästa write
+            if ($cfg.PSObject.Properties["client_token"] -and $cfg.client_token) {
+                $cfg | Add-Member -NotePropertyName "_plain_token" -NotePropertyValue (Unprotect-Token -Stored $cfg.client_token) -Force
+            }
+            return $cfg
         } catch {
             Write-NknLog "WARN" "Kunde inte läsa $ConfigPath - registrerar om: $_"
         }
     }
     return $null
+}
+
+function Get-PlainToken {
+    param([pscustomobject]$Config)
+    if ($Config.PSObject.Properties["_plain_token"] -and $Config._plain_token) {
+        return $Config._plain_token
+    }
+    return Unprotect-Token -Stored $Config.client_token
 }
 
 function Write-Utf8NoBom {
@@ -214,14 +296,17 @@ function Register-Probe {
     Write-NknLog "INFO" "Registrerar mot $CoordinatorUrl med site_name='$($meta.SiteName)'"
     $resp = Invoke-NknJson -Method Post -Uri "$CoordinatorUrl/probe/register" -Body $payload
 
+    $protectedToken = Protect-Token -Plain $resp.client_token
     $cfg = [pscustomobject]@{
         coordinator_url = $CoordinatorUrl
         client_id = $resp.client_id
-        client_token = $resp.client_token
+        client_token = $protectedToken
         site_name = $meta.SiteName
         registered_at = (Get-Date).ToString("o")
     }
     Save-LocalConfig -Config $cfg
+    # Cacha plaintext i minnet under körningen så vi inte dekrypterar varje request
+    $cfg | Add-Member -NotePropertyName "_plain_token" -NotePropertyValue $resp.client_token -Force
     Write-NknLog "INFO" "Registrerad: client_id=$($resp.client_id)"
     return $cfg
 }
@@ -229,7 +314,7 @@ function Register-Probe {
 function Get-Spec {
     param([string]$Token)
     $headers = @{ Authorization = "Bearer $Token" }
-    return Invoke-RestMethod -Method Get -Uri "$CoordinatorUrl/probe/spec" -Headers $headers
+    return Invoke-RestMethod -Method Get -Uri "$CoordinatorUrl/probe/spec" -Headers $headers -UseBasicParsing
 }
 
 function Get-MeasurementExtra {
@@ -470,7 +555,7 @@ function Send-Results {
         client_id = $Config.client_id
         results = $Results
     }
-    $headers = @{ Authorization = "Bearer $($Config.client_token)" }
+    $headers = @{ Authorization = "Bearer $(Get-PlainToken -Config $Config)" }
     $resp = Invoke-NknJson -Method Post -Uri "$CoordinatorUrl/probe/results" -Headers $headers -Body $payload
     Write-NknLog "INFO" "Skickade $($Results.Count) resultat: accepted=$($resp.accepted) rejected=$($resp.rejected)"
 }
@@ -672,7 +757,7 @@ function Send-Heartbeat {
         network_context = $netCtx
         host_info = $hostInfo
     }
-    $headers = @{ Authorization = "Bearer $($Config.client_token)" }
+    $headers = @{ Authorization = "Bearer $(Get-PlainToken -Config $Config)" }
     $resp = Invoke-NknJson -Method Post -Uri "$CoordinatorUrl/probe/heartbeat" -Headers $headers -Body $payload
     Write-NknLog "INFO" "Heartbeat: classification=$($resp.network_classification), public_ip=$($netCtx.public_ip), canaries=$($netCtx.canary_results.Count), nästa om $($resp.next_heartbeat_in_seconds)s"
     return $resp
@@ -683,7 +768,15 @@ function Send-Heartbeat {
 $config = Read-LocalConfig
 if (-not $config -or -not $config.client_token -or $config.coordinator_url -ne $CoordinatorUrl) {
     $config = Register-Probe
+} elseif ($config.client_token -and -not $config.client_token.StartsWith("dpapi:")) {
+    # Gammal klartext-token - kryptera om och spara
+    Write-NknLog "INFO" "Migrerar token till DPAPI-skydd"
+    $config.client_token = Protect-Token -Plain $config.client_token
+    Save-LocalConfig -Config $config
 }
+
+# Klock-sync-check vid uppstart
+Test-ClockSync -BaseUrl $CoordinatorUrl
 
 Write-NknLog "INFO" "Buffer-fil: $BufferPath"
 $initialBuffered = Get-BufferSize -Path $BufferPath
@@ -705,7 +798,7 @@ while ($true) {
 
     if ($now -ge $specCacheUntil) {
         try {
-            $spec = Get-Spec -Token $config.client_token
+            $spec = Get-Spec -Token (Get-PlainToken -Config $config)
             $supportedTypes = @("icmp_ping", "tcp_ping", "dns_query", "http_get", "traceroute")
             $specMeasurements = @($spec.measurements | Where-Object { $supportedTypes -contains $_.type })
             $canaryTargets = @()
