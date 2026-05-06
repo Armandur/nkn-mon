@@ -111,6 +111,7 @@ class MeasurementResult(BaseModel):
     success: bool
     site: str | None = None
     category: str = "builtin"
+    peer_site: str | None = None
 
     # icmp_ping
     rtt_ms_min: float | None = None

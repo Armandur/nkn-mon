@@ -229,6 +229,11 @@ function New-NknResult {
     if ($Measurement.PSObject.Properties["category"] -and $Measurement.category) {
         $category = [string]$Measurement.category
     }
+    $peerSite = $null
+    if ($Measurement.PSObject.Properties["extra"] -and $Measurement.extra -and `
+        $Measurement.extra.PSObject.Properties["peer_site"]) {
+        $peerSite = [string]$Measurement.extra.peer_site
+    }
     return [ordered]@{
         measurement_id = $Measurement.id
         timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
@@ -236,6 +241,7 @@ function New-NknResult {
         target = $Measurement.target
         success = $false
         category = $category
+        peer_site = $peerSite
     }
 }
 

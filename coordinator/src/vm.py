@@ -30,13 +30,17 @@ def _line(metric: str, tags: dict[str, str], value: float, ts_ns: int) -> str:
 
 
 def _common_tags(client_id: str, r) -> dict[str, str]:
-    return {
+    tags = {
         "client_id": client_id,
         "measurement_id": r.measurement_id,
         "target": r.target,
         "site": r.site or "",
         "target_category": getattr(r, "category", None) or "builtin",
     }
+    peer_site = getattr(r, "peer_site", None)
+    if peer_site:
+        tags["peer_site"] = peer_site
+    return tags
 
 
 def build_lines(client_id: str, results: Iterable) -> list[str]:
