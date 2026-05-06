@@ -771,6 +771,41 @@ _ADMIN_HTML = r"""<!DOCTYPE html>
     margin: 0 0 12px 0; line-height: 1.5;
     max-width: 80ch;
   }
+  .help-text code {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 3px; padding: 1px 5px;
+    font-size: 11px;
+  }
+  .meas-types-help {
+    margin: 0 0 16px 0;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+  .meas-types-help summary {
+    cursor: pointer; padding: 8px 12px;
+    font-size: 12px; color: var(--accent);
+    user-select: none;
+  }
+  .meas-types-help summary:hover { background: var(--surface); }
+  .meas-types-help[open] summary { border-bottom: 1px solid var(--border); }
+  .type-help {
+    margin: 0; padding: 12px 16px;
+    font-size: 12px; line-height: 1.6;
+    color: var(--text);
+  }
+  .type-help dt {
+    margin-top: 10px; font-weight: 600;
+  }
+  .type-help dt:first-child { margin-top: 0; }
+  .type-help dd {
+    margin: 4px 0 0 0;
+    color: var(--muted);
+  }
+  .type-help code {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 3px; padding: 1px 5px;
+    font-size: 11px; color: var(--text);
+  }
   /* Tabb-paneler ska inte ha extra padding mot card-edges */
   .tab-panel textarea#editor { margin-top: 0; }
   .tr-row { cursor: pointer; }
@@ -862,13 +897,61 @@ _ADMIN_HTML = r"""<!DOCTYPE html>
           <h3>Builtin-mätningar</h3>
           <p class="help-text">
             Mål som distribueras till alla probes. Varje <code>id</code> måste vara unikt.
-            Klienten utför mätningar enligt typ:
-            <code>icmp_ping</code> (Test-Connection),
-            <code>tcp_ping</code> (TcpClient),
-            <code>dns_query</code> (Resolve-DnsName mot specifik DNS-server),
-            <code>http_get</code> (Invoke-WebRequest),
-            <code>traceroute</code> (Test-NetConnection -TraceRoute, inkl. reverse-DNS för hops).
+            <code>target</code> är namnet eller IP-adressen som ska mätas (för
+            <code>http_get</code> en URL, för <code>dns_query</code> namnet på DNS-servern).
+            <code>interval (s)</code> är hur ofta mätningen ska köras på klienten - per-mått,
+            inte gemensamt. Långt intervall för dyra mått (HTTP, traceroute), kort för
+            billiga (ping).
           </p>
+          <details class="meas-types-help">
+            <summary>Typer och inställningar (klicka för detaljer)</summary>
+            <dl class="type-help">
+              <dt><code>icmp_ping</code></dt>
+              <dd>
+                Skickar ICMP echo-request via PowerShell <code>Test-Connection</code>.
+                Mäter RTT min/avg/max och paketförlust över <code>packet_count</code> paket
+                (default 4). <code>resolve_on_probe</code>: om sant, gör klienten själv DNS-uppslag
+                av målet i sitt nätverk (typiskt önskat så split-horizon-DNS slår igenom).
+                Om falskt har coordinator gjort uppslaget på förhand och skickar ut IP - används
+                bara om man vill mäta mot en specifik IP utan att klienten ska kunna avgöra
+                den själv.
+              </dd>
+              <dt><code>tcp_ping</code></dt>
+              <dd>
+                Försöker öppna en TCP-anslutning till <code>target:port</code> via
+                <code>System.Net.Sockets.TcpClient.BeginConnect</code>. Mäter tiden från
+                connect-start till färdig handshake i ms. <code>port</code> är obligatoriskt.
+                <code>timeout_ms</code> (default 5000) bryter försöket. Användbart som
+                hälsokontroll av tjänsteportar (smtp 25, https 443, etc) - om port är öppen
+                betyder det att tjänsten lyssnar och brandväggen släpper igenom.
+              </dd>
+              <dt><code>dns_query</code></dt>
+              <dd>
+                Frågar DNS-servern <code>target</code> efter <code>query_name</code> av typen
+                <code>query_type</code> (default A). Använder <code>Resolve-DnsName -DnsOnly
+                -NoHostsFile</code> för att tvinga DNS-protokoll och förbi Windows hosts-fil.
+                Mäter svarstid och antal records som returneras. <code>target</code> ska vara
+                en IP eller hostname som pekar på en DNS-server (inte själva uppslaget).
+              </dd>
+              <dt><code>http_get</code></dt>
+              <dd>
+                Hämtar URL:en <code>target</code> via <code>Invoke-WebRequest -UseBasicParsing</code>.
+                Mäter total tid + statuskod. <code>expect_status</code> (default 200): om
+                servern svarar med exakt denna kod räknas mätningen som <code>success=1</code>.
+                Sätt 0 för att tillåta vilken som helst 2xx/3xx. <code>timeout_seconds</code>
+                (default 10) bryter requesten. Till skillnad från ping mäter detta hela
+                applikationsstacken (DNS + TCP + TLS + HTTP + serverkod).
+              </dd>
+              <dt><code>traceroute</code></dt>
+              <dd>
+                Kör <code>Test-NetConnection -TraceRoute</code> mot <code>target</code> och
+                lagrar listan av hops. <code>max_hops</code> (default 30) är gränsen efter
+                vilken paketet anses förlorat. Klienten gör reverse-DNS för varje hop i sitt
+                nät så interna routerns hostnames kommer fram även om coordinator ligger
+                externt. Dyrt mått - kör inte oftare än 5-10 min.
+              </dd>
+            </dl>
+          </details>
           <div id="f-measurements"></div>
           <button type="button" class="list-add" data-add="measurement">+ lägg till mätning</button>
         </div>
