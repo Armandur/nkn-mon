@@ -385,13 +385,44 @@ function Invoke-HttpGet {
     return [pscustomobject]$result
 }
 
+function Invoke-Traceroute {
+    param([pscustomobject]$Measurement)
+
+    $maxHops = [int](Get-MeasurementExtra -Measurement $Measurement -Key "max_hops" -Default 30)
+    $target = $Measurement.target
+    $result = New-NknResult -Measurement $Measurement -Type "traceroute"
+    $result.traceroute_hops = $null
+    $result.traceroute_total_ms = $null
+    $result.traceroute_path = @()
+
+    try {
+        $tnc = Test-NetConnection -ComputerName $target -TraceRoute -Hops $maxHops `
+            -InformationLevel Detailed -ErrorAction Stop -WarningAction SilentlyContinue
+        if ($tnc.PingSucceeded) {
+            $result.success = $true
+            if ($tnc.PingReplyDetails) {
+                $result.traceroute_total_ms = [double]$tnc.PingReplyDetails.RoundtripTime
+            }
+        }
+        if ($tnc.TraceRoute) {
+            $hops = @($tnc.TraceRoute | Where-Object { $_ })
+            $result.traceroute_path = $hops
+            $result.traceroute_hops = $hops.Count
+        }
+    } catch {
+        Write-NknLog "WARN" "traceroute mot $target misslyckades: $_"
+    }
+    return [pscustomobject]$result
+}
+
 function Invoke-Measurement {
     param([pscustomobject]$Measurement)
     switch ($Measurement.type) {
-        "icmp_ping" { return Invoke-IcmpPing -Measurement $Measurement }
-        "tcp_ping"  { return Invoke-TcpPing  -Measurement $Measurement }
-        "dns_query" { return Invoke-DnsQuery -Measurement $Measurement }
-        "http_get"  { return Invoke-HttpGet  -Measurement $Measurement }
+        "icmp_ping"  { return Invoke-IcmpPing  -Measurement $Measurement }
+        "tcp_ping"   { return Invoke-TcpPing   -Measurement $Measurement }
+        "dns_query"  { return Invoke-DnsQuery  -Measurement $Measurement }
+        "http_get"   { return Invoke-HttpGet   -Measurement $Measurement }
+        "traceroute" { return Invoke-Traceroute -Measurement $Measurement }
         default {
             Write-NknLog "WARN" "Okänd mättyp '$($Measurement.type)' för $($Measurement.id) - ignoreras"
             return $null
@@ -632,7 +663,7 @@ while ($true) {
     if ($now -ge $specCacheUntil) {
         try {
             $spec = Get-Spec -Token $config.client_token
-            $supportedTypes = @("icmp_ping", "tcp_ping", "dns_query", "http_get")
+            $supportedTypes = @("icmp_ping", "tcp_ping", "dns_query", "http_get", "traceroute")
             $specMeasurements = @($spec.measurements | Where-Object { $supportedTypes -contains $_.type })
             $canaryTargets = @()
             if ($spec.PSObject.Properties["canary_targets"] -and $spec.canary_targets) {

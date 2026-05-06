@@ -100,13 +100,13 @@ class SpecResponse(BaseModel):
 
 
 class MeasurementResult(BaseModel):
-    """Resultat från en av {icmp_ping, tcp_ping, dns_query, http_get}.
+    """Resultat från en av {icmp_ping, tcp_ping, dns_query, http_get, traceroute}.
 
     Per-typ-fält är optional och fylls i bara av relevant mättyp.
     """
     measurement_id: str
     timestamp: str
-    type: Literal["icmp_ping", "tcp_ping", "dns_query", "http_get"]
+    type: Literal["icmp_ping", "tcp_ping", "dns_query", "http_get", "traceroute"]
     target: str
     success: bool
     site: str | None = None
@@ -130,6 +130,11 @@ class MeasurementResult(BaseModel):
     http_status: int | None = None
     http_total_ms: float | None = None
     http_ttfb_ms: float | None = None
+
+    # traceroute
+    traceroute_hops: int | None = None
+    traceroute_total_ms: float | None = None
+    traceroute_path: list[str] | None = None
 
 
 class ResultsRequest(BaseModel):

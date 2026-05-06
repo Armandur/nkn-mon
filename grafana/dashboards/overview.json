@@ -279,11 +279,47 @@
       "fieldConfig": {
         "defaults": {
           "color": {"mode": "palette-classic"},
+          "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "pointSize": 4, "showPoints": "auto", "spanNulls": false},
+          "unit": "short"
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 48},
+      "id": 12,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "nkn_traceroute_hops", "legendFormat": "{{site}} -> {{target}}", "refId": "A"}
+      ],
+      "title": "Traceroute – antal hops",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "pointSize": 4, "showPoints": "auto", "spanNulls": false},
+          "unit": "ms"
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 48},
+      "id": 13,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "nkn_traceroute_total_ms", "legendFormat": "{{site}} -> {{target}}", "refId": "A"}
+      ],
+      "title": "Traceroute – RTT till destination",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "victoriametrics"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
           "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 5, "pointSize": 4, "showPoints": "auto", "spanNulls": false},
           "unit": "ms"
         }
       },
-      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 48},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 56},
       "id": 10,
       "options": {"legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi"}},
       "targets": [
@@ -316,7 +352,7 @@
           {"matcher": {"id": "byName", "options": "Till-IP"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "auto"}}, {"id": "color", "value": {"mode": "fixed", "fixedColor": "text"}}, {"id": "unit", "value": "string"}, {"id": "custom.align", "value": "left"}]}
         ]
       },
-      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 58},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 66},
       "id": 11,
       "options": {"showHeader": true, "sortBy": [{"displayName": "Senaste RTT", "desc": true}]},
       "targets": [
@@ -342,6 +378,6 @@
   "timezone": "browser",
   "title": "NKN-Monitor – översikt",
   "uid": "nkn-overview",
-  "version": 7,
+  "version": 8,
   "weekStart": ""
 }

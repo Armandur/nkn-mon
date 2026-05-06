@@ -115,7 +115,8 @@ async def _fetch_spec(client: httpx.AsyncClient, headers: dict) -> list[dict]:
     resp = await client.get(f"{COORDINATOR_URL}/probe/spec", headers=headers)
     resp.raise_for_status()
     spec = resp.json()
-    return [m for m in spec.get("measurements", []) if m.get("type") == "icmp_ping"]
+    keep = {"icmp_ping", "traceroute"}
+    return [m for m in spec.get("measurements", []) if m.get("type") in keep]
 
 
 def _peer_rtt() -> tuple[float, float, float, float, bool]:
@@ -124,6 +125,13 @@ def _peer_rtt() -> tuple[float, float, float, float, bool]:
     spread = random.uniform(1.0, 5.0)
     loss = 0 if random.random() > 0.03 else random.choice([5, 25])
     return (max(0.1, avg - spread), avg, avg + spread, loss, loss < 100)
+
+
+def _traceroute_data() -> tuple[bool, int, float, list[str]]:
+    hops = random.randint(6, 14)
+    total = random.uniform(20, 120)
+    path = [f"10.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,254)}" for _ in range(hops)]
+    return (random.random() > 0.05, hops, total, path)
 
 
 async def run_probe(idx: int) -> None:
@@ -172,6 +180,23 @@ async def run_probe(idx: int) -> None:
             for m in ping_targets:
                 category = m.get("category", "builtin")
                 peer_site = (m.get("extra") or {}).get("peer_site")
+                mtype = m.get("type")
+                if mtype == "traceroute":
+                    success, hops, total_ms, path = _traceroute_data()
+                    results.append({
+                        "measurement_id": m["id"],
+                        "timestamp": _now_iso(),
+                        "type": "traceroute",
+                        "target": m["target"],
+                        "success": success,
+                        "site": meta["site"],
+                        "category": category,
+                        "traceroute_hops": hops if success else None,
+                        "traceroute_total_ms": total_ms if success else None,
+                        "traceroute_path": path if success else None,
+                    })
+                    continue
+
                 if category == "peer":
                     rtt_min, rtt_avg, rtt_max, loss, success = _peer_rtt()
                 else:

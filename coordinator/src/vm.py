@@ -92,6 +92,13 @@ def build_lines(client_id: str, results: Iterable) -> list[str]:
                 lines.append(_line("nkn_http_response_ms", tags, r.http_total_ms, ts_ns))
             if r.http_ttfb_ms is not None:
                 lines.append(_line("nkn_http_ttfb_ms", tags, r.http_ttfb_ms, ts_ns))
+
+        elif r.type == "traceroute":
+            lines.append(_line("nkn_traceroute_success", tags, success_value, ts_ns))
+            if r.traceroute_hops is not None:
+                lines.append(_line("nkn_traceroute_hops", tags, float(r.traceroute_hops), ts_ns))
+            if r.traceroute_total_ms is not None:
+                lines.append(_line("nkn_traceroute_total_ms", tags, r.traceroute_total_ms, ts_ns))
     return lines
 
 
