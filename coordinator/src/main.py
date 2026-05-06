@@ -379,10 +379,11 @@ async def heartbeat(
 
 
 @app.get("/probe/client/version")
-async def get_client_version(
-    request: Request, probe: Probe = Depends(authenticated_probe)
-) -> dict:
-    """Returnera info om senaste klientversion (utan att ladda ner)."""
+async def get_client_version(request: Request) -> dict:
+    """Returnera info om senaste klientversion. Publik - skriptet finns
+    ändå öppet på GitHub. Behöver vara publikt så probes som har en
+    trasig token (eller en gammal version utan auth-header i Update-Self)
+    kan ladda ner senaste versionen och rätta sig själva."""
     info: ClientInfo = request.app.state.client_info
     if not info.version:
         raise HTTPException(status_code=404, detail="Ingen klient distribueras härifrån")
@@ -395,10 +396,8 @@ async def get_client_version(
 
 
 @app.get("/probe/client/download")
-async def download_client(
-    request: Request, probe: Probe = Depends(authenticated_probe)
-):
-    """Returnera senaste klient-skript som en binär nedladdning."""
+async def download_client(request: Request):
+    """Returnera senaste klient-skript som en binär nedladdning. Publik."""
     from fastapi.responses import Response
     info: ClientInfo = request.app.state.client_info
     if not info.version or not info.sha256:
