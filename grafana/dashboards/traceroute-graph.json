@@ -22,7 +22,7 @@
           "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "coordinator-graph"},
           "type": "json",
           "source": "url",
-          "url": "/admin/api/traceroute-graph/nodes?client_id=${probe:csv}",
+          "url": "/admin/api/traceroute-graph/nodes?site=${site:csv}",
           "url_options": {"method": "GET", "data": ""},
           "format": "table",
           "parser": "backend",
@@ -41,7 +41,7 @@
           "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "coordinator-graph"},
           "type": "json",
           "source": "url",
-          "url": "/admin/api/traceroute-graph/edges?client_id=${probe:csv}",
+          "url": "/admin/api/traceroute-graph/edges?site=${site:csv}",
           "url_options": {"method": "GET", "data": ""},
           "format": "table",
           "parser": "backend",
@@ -64,21 +64,20 @@
   "templating": {
     "list": [
       {
-        "name": "probe",
-        "label": "Probe",
+        "name": "site",
+        "label": "Site",
         "type": "query",
         "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "coordinator-graph"},
         "query": {
           "type": "json",
           "source": "url",
-          "url": "/admin/api/traceroute-graph/probes",
+          "url": "/admin/api/traceroute-graph/sites",
           "url_options": {"method": "GET", "data": ""},
           "format": "table",
           "parser": "backend",
           "root_selector": "",
           "columns": [
-            {"selector": "id", "text": "__value", "type": "string"},
-            {"selector": "title", "text": "__text", "type": "string"}
+            {"selector": "site", "text": "site", "type": "string"}
           ]
         },
         "refresh": 2,
@@ -94,5 +93,5 @@
   "timezone": "browser",
   "title": "NKN-Monitor – traceroute-graf",
   "uid": "nkn-traceroute-graph",
-  "version": 2
+  "version": 3
 }
