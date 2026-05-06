@@ -1,0 +1,12 @@
+#!/command/with-contenv sh
+# Single-image-deployment: kör Grafana som root i containern. Förenklar
+# permissions mot /data utan att behöva s6-setuidgid och user-switching.
+cd /usr/share/grafana
+exec /usr/share/grafana/bin/grafana \
+    server \
+    --homepath=/usr/share/grafana \
+    --packaging=docker \
+    cfg:default.paths.data=/data/grafana \
+    cfg:default.paths.logs=/data/grafana/logs \
+    cfg:default.paths.plugins=/data/grafana/plugins \
+    cfg:default.paths.provisioning=/etc/grafana/provisioning

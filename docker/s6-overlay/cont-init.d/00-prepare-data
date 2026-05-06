@@ -1,0 +1,22 @@
+#!/command/with-contenv sh
+# Skapa data-undermappar och kopiera default-config om de saknas.
+set -eu
+
+echo "[init] Förbereder /data"
+mkdir -p /data/grafana /data/grafana/logs /data/grafana/plugins /data/grafana/dashboards /data/vm
+
+if [ ! -f /data/config.yaml ]; then
+    echo "[init] Kopierar default config -> /data/config.yaml"
+    cp /usr/share/nkn-mon/config.yaml.default /data/config.yaml
+fi
+
+if [ -z "$(ls -A /data/grafana/dashboards 2>/dev/null)" ]; then
+    echo "[init] Kopierar default-dashboards -> /data/grafana/dashboards"
+    cp -r /usr/share/grafana/dashboards-default/. /data/grafana/dashboards/
+fi
+
+# Provisioneringen pekar på /var/lib/grafana/dashboards (samma som dev-compose).
+# I single-image vill vi dock persistera under /data, så symlinka hit.
+mkdir -p /var/lib/grafana
+rm -rf /var/lib/grafana/dashboards
+ln -sfn /data/grafana/dashboards /var/lib/grafana/dashboards

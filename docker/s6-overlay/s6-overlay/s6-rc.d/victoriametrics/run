@@ -1,0 +1,6 @@
+#!/command/with-contenv sh
+exec /usr/local/bin/victoria-metrics \
+    --storageDataPath=/data/vm \
+    --retentionPeriod=90d \
+    --httpListenAddr=:8428 \
+    --influxSkipSingleField
