@@ -197,27 +197,37 @@ function Get-Spec {
     return Invoke-RestMethod -Method Get -Uri "$CoordinatorUrl/probe/spec" -Headers $headers
 }
 
+function Get-MeasurementExtra {
+    param([pscustomobject]$Measurement, [string]$Key, $Default = $null)
+    if ($Measurement.PSObject.Properties["extra"] -and `
+        $Measurement.extra -and `
+        $Measurement.extra.PSObject.Properties[$Key]) {
+        return $Measurement.extra.$Key
+    }
+    return $Default
+}
+
+function New-NknResult {
+    param([pscustomobject]$Measurement, [string]$Type)
+    return [ordered]@{
+        measurement_id = $Measurement.id
+        timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+        type = $Type
+        target = $Measurement.target
+        success = $false
+    }
+}
+
 function Invoke-IcmpPing {
     param([pscustomobject]$Measurement)
 
-    $packetCount = 4
-    if ($Measurement.PSObject.Properties["extra"] -and $Measurement.extra.PSObject.Properties["packet_count"]) {
-        $packetCount = [int]$Measurement.extra.packet_count
-    }
-
+    $packetCount = [int](Get-MeasurementExtra -Measurement $Measurement -Key "packet_count" -Default 4)
     $target = $Measurement.target
-    $ts = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-    $result = [ordered]@{
-        measurement_id = $Measurement.id
-        timestamp = $ts
-        type = "icmp_ping"
-        target = $target
-        success = $false
-        rtt_ms_min = $null
-        rtt_ms_avg = $null
-        rtt_ms_max = $null
-        packet_loss_pct = 100.0
-    }
+    $result = New-NknResult -Measurement $Measurement -Type "icmp_ping"
+    $result.rtt_ms_min = $null
+    $result.rtt_ms_avg = $null
+    $result.rtt_ms_max = $null
+    $result.packet_loss_pct = 100.0
 
     try {
         $pings = Test-Connection -ComputerName $target -Count $packetCount -ErrorAction Stop
@@ -236,9 +246,122 @@ function Invoke-IcmpPing {
             $result.packet_loss_pct = [double]$loss
         }
     } catch {
-        Write-NknLog "WARN" "Ping mot $target misslyckades: $_"
+        Write-NknLog "WARN" "icmp_ping mot $target misslyckades: $_"
     }
     return [pscustomobject]$result
+}
+
+function Invoke-TcpPing {
+    param([pscustomobject]$Measurement)
+
+    $port = [int](Get-MeasurementExtra -Measurement $Measurement -Key "port" -Default 0)
+    $timeoutMs = [int](Get-MeasurementExtra -Measurement $Measurement -Key "timeout_ms" -Default 5000)
+    $target = $Measurement.target
+    $result = New-NknResult -Measurement $Measurement -Type "tcp_ping"
+    $result.rtt_ms = $null
+
+    if ($port -le 0) {
+        Write-NknLog "WARN" "tcp_ping mot $target saknar port i config"
+        return [pscustomobject]$result
+    }
+
+    $client = $null
+    try {
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        $client = New-Object System.Net.Sockets.TcpClient
+        $async = $client.BeginConnect($target, $port, $null, $null)
+        $waited = $async.AsyncWaitHandle.WaitOne($timeoutMs, $false)
+        $sw.Stop()
+        if ($waited -and $client.Connected) {
+            $client.EndConnect($async)
+            $result.success = $true
+            $result.rtt_ms = [double]$sw.Elapsed.TotalMilliseconds
+        }
+    } catch {
+        Write-NknLog "WARN" "tcp_ping mot ${target}:${port} misslyckades: $_"
+    } finally {
+        if ($client) { $client.Close() }
+    }
+    return [pscustomobject]$result
+}
+
+function Invoke-DnsQuery {
+    param([pscustomobject]$Measurement)
+
+    $server = $Measurement.target
+    $queryName = [string](Get-MeasurementExtra -Measurement $Measurement -Key "query_name" -Default "")
+    $queryType = [string](Get-MeasurementExtra -Measurement $Measurement -Key "query_type" -Default "A")
+    $result = New-NknResult -Measurement $Measurement -Type "dns_query"
+    $result.rtt_ms = $null
+    $result.dns_records = 0
+
+    if (-not $queryName) {
+        Write-NknLog "WARN" "dns_query mot $server saknar query_name i config"
+        return [pscustomobject]$result
+    }
+
+    try {
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        $records = Resolve-DnsName -Name $queryName -Server $server -Type $queryType `
+            -DnsOnly -NoHostsFile -ErrorAction Stop
+        $sw.Stop()
+        $result.success = $true
+        $result.rtt_ms = [double]$sw.Elapsed.TotalMilliseconds
+        $result.dns_records = @($records).Count
+    } catch {
+        Write-NknLog "WARN" "dns_query mot $server ($queryName/$queryType) misslyckades: $_"
+    }
+    return [pscustomobject]$result
+}
+
+function Invoke-HttpGet {
+    param([pscustomobject]$Measurement)
+
+    $url = $Measurement.target
+    $expectStatus = [int](Get-MeasurementExtra -Measurement $Measurement -Key "expect_status" -Default 0)
+    $timeoutSec = [int](Get-MeasurementExtra -Measurement $Measurement -Key "timeout_seconds" -Default 10)
+    $result = New-NknResult -Measurement $Measurement -Type "http_get"
+    $result.http_status = 0
+    $result.http_total_ms = $null
+    $result.http_ttfb_ms = $null
+
+    try {
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        $resp = Invoke-WebRequest -Uri $url -Method Get -UseBasicParsing `
+            -TimeoutSec $timeoutSec -ErrorAction Stop
+        $sw.Stop()
+        $result.http_status = [int]$resp.StatusCode
+        $result.http_total_ms = [double]$sw.Elapsed.TotalMilliseconds
+        if ($expectStatus -gt 0) {
+            $result.success = ($result.http_status -eq $expectStatus)
+        } else {
+            $result.success = ($result.http_status -ge 200 -and $result.http_status -lt 400)
+        }
+    } catch [System.Net.WebException] {
+        if ($sw.IsRunning) { $sw.Stop() }
+        $result.http_total_ms = [double]$sw.Elapsed.TotalMilliseconds
+        if ($_.Exception.Response) {
+            $result.http_status = [int]$_.Exception.Response.StatusCode
+        }
+        Write-NknLog "WARN" "http_get mot $url misslyckades (status $($result.http_status)): $($_.Exception.Message)"
+    } catch {
+        Write-NknLog "WARN" "http_get mot $url misslyckades: $_"
+    }
+    return [pscustomobject]$result
+}
+
+function Invoke-Measurement {
+    param([pscustomobject]$Measurement)
+    switch ($Measurement.type) {
+        "icmp_ping" { return Invoke-IcmpPing -Measurement $Measurement }
+        "tcp_ping"  { return Invoke-TcpPing  -Measurement $Measurement }
+        "dns_query" { return Invoke-DnsQuery -Measurement $Measurement }
+        "http_get"  { return Invoke-HttpGet  -Measurement $Measurement }
+        default {
+            Write-NknLog "WARN" "Okänd mättyp '$($Measurement.type)' för $($Measurement.id) - ignoreras"
+            return $null
+        }
+    }
 }
 
 function Send-Results {
@@ -268,9 +391,11 @@ while ($true) {
     if ((Get-Date) -ge $specCacheUntil) {
         try {
             $spec = Get-Spec -Token $config.client_token
-            $specMeasurements = @($spec.measurements | Where-Object { $_.type -eq "icmp_ping" })
+            $supportedTypes = @("icmp_ping", "tcp_ping", "dns_query", "http_get")
+            $specMeasurements = @($spec.measurements | Where-Object { $supportedTypes -contains $_.type })
             $specCacheUntil = (Get-Date).AddMinutes(10)
-            Write-NknLog "INFO" "Spec hämtad: $($specMeasurements.Count) icmp_ping-mål"
+            $byType = $specMeasurements | Group-Object type | ForEach-Object { "$($_.Count) $($_.Name)" }
+            Write-NknLog "INFO" "Spec hämtad: $($specMeasurements.Count) mål ($($byType -join ', '))"
         } catch {
             Write-NknLog "WARN" "Spec-hämtning misslyckades: $_"
         }
@@ -278,7 +403,8 @@ while ($true) {
 
     $results = @()
     foreach ($m in $specMeasurements) {
-        $results += Invoke-IcmpPing -Measurement $m
+        $r = Invoke-Measurement -Measurement $m
+        if ($r) { $results += $r }
     }
 
     if ($results.Count -gt 0) {

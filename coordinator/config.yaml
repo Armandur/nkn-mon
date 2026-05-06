@@ -18,7 +18,7 @@ registration_keys:
 builtin_measurements:
   - id: builtin-ping-ad
     type: icmp_ping
-    target: ad-1.intern
+    target: knet.ad.svenskakyrkan.se
     interval_seconds: 60
     packet_count: 4
     resolve_on_probe: true
@@ -32,28 +32,22 @@ builtin_measurements:
 
   - id: builtin-tcp-smtp
     type: tcp_ping
-    target: smtp.intern
+    target: smtp.svenskakyrkan.se
     port: 587
     interval_seconds: 60
 
   - id: builtin-dns
     type: dns_query
-    target: 10.0.0.53
-    query_name: intra.svenskakyrkan.se
+    target: 10.60.0.11
+    query_name: kornet.svenskakyrkan.se
     query_type: A
     interval_seconds: 300
 
-  - id: builtin-http-intranet
-    type: http_get
-    target: https://intra.svenskakyrkan.se/health
-    interval_seconds: 300
-    expect_status: 200
-
 # Canary-mål används av klientens network context check (Iteration 2 senare del).
 canary_targets:
-  - target: ad-1.intern
-    description: AD-DC primär
-  - target: smtp.intern
+  - target: knet.ad.svenskakyrkan.se
+    description: AD-DC
+  - target: smtp.svenskakyrkan.se
     description: SMTP-server
 
 # IP-ranges (CIDR) som klassificeras som NKN. Lämnas tomt tills riktiga ranges känns.

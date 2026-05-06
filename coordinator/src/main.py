@@ -91,22 +91,39 @@ class SpecResponse(BaseModel):
     measurements: list[SpecMeasurement]
 
 
-class PingResult(BaseModel):
+class MeasurementResult(BaseModel):
+    """Resultat från en av {icmp_ping, tcp_ping, dns_query, http_get}.
+
+    Per-typ-fält är optional och fylls i bara av relevant mättyp.
+    """
     measurement_id: str
     timestamp: str
-    type: Literal["icmp_ping"]
+    type: Literal["icmp_ping", "tcp_ping", "dns_query", "http_get"]
     target: str
     success: bool
+    site: str | None = None
+
+    # icmp_ping
     rtt_ms_min: float | None = None
     rtt_ms_avg: float | None = None
     rtt_ms_max: float | None = None
     packet_loss_pct: float | None = None
-    site: str | None = None
+
+    # tcp_ping & dns_query
+    rtt_ms: float | None = None
+
+    # dns_query
+    dns_records: int | None = None
+
+    # http_get
+    http_status: int | None = None
+    http_total_ms: float | None = None
+    http_ttfb_ms: float | None = None
 
 
 class ResultsRequest(BaseModel):
     client_id: str
-    results: list[PingResult]
+    results: list[MeasurementResult]
 
 
 class ResultsResponse(BaseModel):
@@ -195,7 +212,7 @@ async def results(
     if probe.id != req.client_id:
         raise HTTPException(status_code=403, detail="client_id matchar inte token")
 
-    accepted: list[PingResult] = []
+    accepted: list[MeasurementResult] = []
     rejected_reasons: list[str] = []
     for r in req.results:
         if not _valid_iso(r.timestamp):

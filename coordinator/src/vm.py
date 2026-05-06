@@ -29,27 +29,62 @@ def _line(metric: str, tags: dict[str, str], value: float, ts_ns: int) -> str:
     return f"{prefix} value={value} {ts_ns}"
 
 
+def _common_tags(client_id: str, r) -> dict[str, str]:
+    return {
+        "client_id": client_id,
+        "measurement_id": r.measurement_id,
+        "target": r.target,
+        "site": r.site or "",
+        "target_category": "builtin",
+    }
+
+
 def build_lines(client_id: str, results: Iterable) -> list[str]:
-    """Bygg Influx line protocol-rader för en sekvens av PingResult-objekt."""
+    """Bygg Influx line protocol-rader för en sekvens av MeasurementResult.
+
+    Per typ:
+    - icmp_ping  -> nkn_ping_success / nkn_ping_rtt_ms[ _min/_max] / nkn_ping_loss_pct
+    - tcp_ping   -> nkn_tcp_success / nkn_tcp_rtt_ms
+    - dns_query  -> nkn_dns_query_success / nkn_dns_query_ms / nkn_dns_query_records
+    - http_get   -> nkn_http_success / nkn_http_status / nkn_http_response_ms / nkn_http_ttfb_ms
+    """
     lines: list[str] = []
     for r in results:
         ts_ns = _iso_to_ns(r.timestamp)
-        tags = {
-            "client_id": client_id,
-            "measurement_id": r.measurement_id,
-            "target": r.target,
-            "site": r.site or "",
-            "target_category": "builtin",
-        }
-        lines.append(_line("nkn_ping_success", tags, 1.0 if r.success else 0.0, ts_ns))
-        if r.rtt_ms_avg is not None:
-            lines.append(_line("nkn_ping_rtt_ms", tags, r.rtt_ms_avg, ts_ns))
-        if r.rtt_ms_min is not None:
-            lines.append(_line("nkn_ping_rtt_ms_min", tags, r.rtt_ms_min, ts_ns))
-        if r.rtt_ms_max is not None:
-            lines.append(_line("nkn_ping_rtt_ms_max", tags, r.rtt_ms_max, ts_ns))
-        if r.packet_loss_pct is not None:
-            lines.append(_line("nkn_ping_loss_pct", tags, r.packet_loss_pct, ts_ns))
+        tags = _common_tags(client_id, r)
+        success_value = 1.0 if r.success else 0.0
+
+        if r.type == "icmp_ping":
+            lines.append(_line("nkn_ping_success", tags, success_value, ts_ns))
+            if r.rtt_ms_avg is not None:
+                lines.append(_line("nkn_ping_rtt_ms", tags, r.rtt_ms_avg, ts_ns))
+            if r.rtt_ms_min is not None:
+                lines.append(_line("nkn_ping_rtt_ms_min", tags, r.rtt_ms_min, ts_ns))
+            if r.rtt_ms_max is not None:
+                lines.append(_line("nkn_ping_rtt_ms_max", tags, r.rtt_ms_max, ts_ns))
+            if r.packet_loss_pct is not None:
+                lines.append(_line("nkn_ping_loss_pct", tags, r.packet_loss_pct, ts_ns))
+
+        elif r.type == "tcp_ping":
+            lines.append(_line("nkn_tcp_success", tags, success_value, ts_ns))
+            if r.rtt_ms is not None:
+                lines.append(_line("nkn_tcp_rtt_ms", tags, r.rtt_ms, ts_ns))
+
+        elif r.type == "dns_query":
+            lines.append(_line("nkn_dns_query_success", tags, success_value, ts_ns))
+            if r.rtt_ms is not None:
+                lines.append(_line("nkn_dns_query_ms", tags, r.rtt_ms, ts_ns))
+            if r.dns_records is not None:
+                lines.append(_line("nkn_dns_query_records", tags, float(r.dns_records), ts_ns))
+
+        elif r.type == "http_get":
+            lines.append(_line("nkn_http_success", tags, success_value, ts_ns))
+            if r.http_status is not None:
+                lines.append(_line("nkn_http_status", tags, float(r.http_status), ts_ns))
+            if r.http_total_ms is not None:
+                lines.append(_line("nkn_http_response_ms", tags, r.http_total_ms, ts_ns))
+            if r.http_ttfb_ms is not None:
+                lines.append(_line("nkn_http_ttfb_ms", tags, r.http_ttfb_ms, ts_ns))
     return lines
 
 
