@@ -41,6 +41,7 @@ _MIGRATIONS: list[tuple[str, str]] = [
     ("last_classification", "TEXT"),
     ("version", "TEXT"),
     ("last_local_ipv4_json", "TEXT"),
+    ("role", "TEXT NOT NULL DEFAULT 'probe'"),
 ]
 
 
@@ -171,7 +172,7 @@ class Storage:
             rows = conn.execute(
                 "SELECT id, hostname, site_name, ecclesiastical_unit, site_type, "
                 "enabled, last_heartbeat_at, last_seen_public_ip, last_classification, "
-                "version, last_local_ipv4_json, created_at FROM probes ORDER BY created_at DESC"
+                "version, last_local_ipv4_json, role, created_at FROM probes ORDER BY created_at DESC"
             ).fetchall()
         result = []
         for r in rows:
@@ -183,6 +184,14 @@ class Storage:
                 d["last_local_ipv4"] = []
             result.append(d)
         return result
+
+    def set_probe_role(self, probe_id: str, role: str) -> bool:
+        if role not in ("probe", "anchor"):
+            raise ValueError(f"Ogiltig role: {role}")
+        with self._lock, self._connect() as conn:
+            cur = conn.execute("UPDATE probes SET role = ? WHERE id = ?", (role, probe_id))
+            conn.commit()
+            return cur.rowcount > 0
 
     def delete_dead_probes(self, older_than_hours: int) -> int:
         """Ta bort probes som inte heartbeatat på X timmar.

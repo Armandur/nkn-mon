@@ -509,10 +509,18 @@ function Get-NetworkContext {
 
     $publicIp = Get-PublicIp
 
+    # Exkludera virtuella interface (Docker, VPN, Hyper-V, loopback) som inte
+    # representerar siten - annars hamnar peer-tilldelningen på fel subnet.
+    $excludeAlias = '^(Loopback|Tailscale|WireGuard|OpenVPN|vEthernet|Bluetooth|Docker|Hyper-?V|TAP-Windows|VirtualBox|VMware)'
     $localIPv4 = @()
     try {
         $localIPv4 = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-            Where-Object { $_.IPAddress -ne "127.0.0.1" -and $_.PrefixOrigin -ne "WellKnown" } |
+            Where-Object {
+                $_.IPAddress -ne "127.0.0.1" -and
+                $_.PrefixOrigin -ne "WellKnown" -and
+                $_.IPAddress -notlike "169.254.*" -and
+                $_.InterfaceAlias -notmatch $excludeAlias
+            } |
             Select-Object -ExpandProperty IPAddress)
     } catch {}
 

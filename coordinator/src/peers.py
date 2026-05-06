@@ -32,17 +32,17 @@ def assign_peers(
 ) -> list[dict]:
     """Plocka 'count' peers för en probe.
 
-    - Filtrerar bort probes på samma /24 som probe (samma site)
-    - Filtrerar bort probes utan local_ipv4 eller som inte klassats som NKN
-    - Filtrerar bort sig själv
-    - Roterar genom deterministisk hash av (probe_id + dagens datum)
+    - Anchors (role=anchor) inkluderas alltid, oberoende av shuffle
+    - Övriga probes filtreras på subnet/classification/enabled
+    - Roterar bland icke-anchor-kandidater via (probe_id + dagens datum)
     """
     if today is None:
         today = datetime.now(timezone.utc).date().isoformat()
 
     my_subnets = _subnets_of(probe.get("last_local_ipv4") or [])
 
-    candidates = []
+    anchors: list[dict] = []
+    candidates: list[dict] = []
     for p in all_probes:
         if p["id"] == probe["id"]:
             continue
@@ -55,13 +55,17 @@ def assign_peers(
         their_subnets = _subnets_of(p["last_local_ipv4"])
         if my_subnets & their_subnets:
             continue
-        candidates.append(p)
+        if p.get("role") == "anchor":
+            anchors.append(p)
+        else:
+            candidates.append(p)
 
-    if not candidates:
-        return []
-
-    # Deterministisk shuffle baserad på probe + datum så urvalet roterar
     seed_str = f"{probe['id']}-{today}"
     rng = random.Random(seed_str)
     rng.shuffle(candidates)
-    return candidates[:count]
+
+    # Anchors först (alltid med), sen fyll på med roterade probes upp till count
+    selected = anchors[:]
+    remaining = max(0, count - len(selected))
+    selected.extend(candidates[:remaining])
+    return selected

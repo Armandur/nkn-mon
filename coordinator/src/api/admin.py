@@ -149,6 +149,23 @@ def sweep_dead_probes(
     return {"deleted": deleted, "older_than_hours": older_than_hours}
 
 
+@router.post("/api/probes/{probe_id}/role")
+def set_probe_role(
+    probe_id: str,
+    role: str,
+    request: Request,
+    _: str = Depends(require_admin),
+) -> dict:
+    try:
+        ok = request.app.state.storage.set_probe_role(probe_id, role)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not ok:
+        raise HTTPException(status_code=404, detail="Probe finns inte")
+    logger.info("Probe %s satt till role=%s", probe_id, role)
+    return {"id": probe_id, "role": role}
+
+
 _ADMIN_HTML = r"""<!DOCTYPE html>
 <html lang="sv">
 <head>
@@ -272,6 +289,13 @@ _ADMIN_HTML = r"""<!DOCTYPE html>
   .badge.nkn { background: var(--accent-dim); color: var(--accent); }
   .badge.external { background: rgba(215, 186, 125, 0.2); color: var(--warn); }
   .badge.unknown { background: rgba(122, 128, 136, 0.2); color: var(--muted); }
+  .badge.anchor { background: rgba(92, 109, 209, 0.25); color: #a0b5ff; }
+  .badge.probe { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .role-select {
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 3px;
+    padding: 1px 4px; font-size: 12px; font-family: inherit;
+  }
   .age-fresh { color: var(--success); }
   .age-stale { color: var(--warn); }
   .age-dead { color: var(--error); }
@@ -322,7 +346,7 @@ _ADMIN_HTML = r"""<!DOCTYPE html>
         <tr>
           <th>Site</th>
           <th>Hostname</th>
-          <th>Typ</th>
+          <th>Roll</th>
           <th>Klassificering</th>
           <th>Publik IP</th>
           <th>Senaste heartbeat</th>
@@ -399,16 +423,36 @@ async function refreshProbes() {
   tbody.innerHTML = data.probes.map(p => {
     const cls = (p.last_classification || "unknown").toLowerCase();
     const age = formatAge(p.last_heartbeat_at);
+    const role = p.role || "probe";
+    const roleSelect = `<select class="role-select" data-id="${escapeHtml(p.id)}" data-current="${role}">
+      <option value="probe"${role === "probe" ? " selected" : ""}>probe</option>
+      <option value="anchor"${role === "anchor" ? " selected" : ""}>anchor</option>
+    </select>`;
     return `<tr>
       <td>${escapeHtml(p.site_name) || '<span class="muted">-</span>'}</td>
       <td>${escapeHtml(p.hostname) || '<span class="muted">-</span>'}</td>
-      <td class="muted">${escapeHtml(p.site_type) || '-'}</td>
+      <td>${roleSelect}</td>
       <td><span class="badge ${cls}">${escapeHtml(cls)}</span></td>
       <td>${escapeHtml(p.last_seen_public_ip) || '<span class="muted">-</span>'}</td>
       <td class="${age.cls}">${age.text}</td>
       <td class="muted">${escapeHtml(p.version) || '-'}</td>
     </tr>`;
   }).join("");
+
+  tbody.querySelectorAll(".role-select").forEach(sel => {
+    sel.addEventListener("change", async (e) => {
+      const id = e.target.dataset.id;
+      const newRole = e.target.value;
+      const r = await fetch(`/admin/api/probes/${id}/role?role=${newRole}`, { method: "POST" });
+      if (r.ok) {
+        setStatus(`Probe ${id.slice(0,8)} -> ${newRole}`, "success");
+        refreshProbes();
+      } else {
+        setStatus("Kunde inte sätta roll: " + (await r.text()), "error");
+        e.target.value = e.target.dataset.current;
+      }
+    });
+  });
 }
 
 async function saveConfig() {
