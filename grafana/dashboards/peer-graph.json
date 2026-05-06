@@ -11,8 +11,18 @@
       "gridPos": {"h": 22, "w": 24, "x": 0, "y": 0},
       "id": 1,
       "options": {
-        "nodes": {"mainStatUnit": "string", "secondaryStatUnit": "string"},
-        "edges": {"mainStatUnit": "string"}
+        "nodes": {
+          "mainStatUnit": "string",
+          "secondaryStatUnit": "string",
+          "arcs": []
+        },
+        "edges": {
+          "mainStatUnit": "string",
+          "secondaryStatUnit": "string"
+        },
+        "nodeRadius": 40,
+        "layoutAlgorithm": "layered",
+        "zoomMode": "cooperative"
       },
       "targets": [
         {
@@ -64,5 +74,5 @@
   "timezone": "browser",
   "title": "NKN-Monitor – peer-graf",
   "uid": "nkn-peer-graph",
-  "version": 1
+  "version": 2
 }
