@@ -166,6 +166,15 @@ function Invoke-NknJson {
     return Invoke-RestMethod @params
 }
 
+function Test-IsAuthError {
+    param($ErrorRecord)
+    try {
+        $resp = $ErrorRecord.Exception.Response
+        if ($resp -and [int]$resp.StatusCode -eq 401) { return $true }
+    } catch {}
+    return $false
+}
+
 function Register-Probe {
     $meta = Get-RegistrationMetadata
 
@@ -517,6 +526,14 @@ while ($true) {
             $byType = $specMeasurements | Group-Object type | ForEach-Object { "$($_.Count) $($_.Name)" }
             Write-NknLog "INFO" "Spec hämtad: $($specMeasurements.Count) mål ($($byType -join ', ')), $($canaryTargets.Count) canaries, giltig till $($specCacheUntil.ToString('HH:mm:ss'))"
         } catch {
+            if (Test-IsAuthError $_) {
+                Write-NknLog "WARN" "Spec-fetch fick 401 - registrerar om"
+                $config = Register-Probe
+                $specCacheUntil = [datetime]::MinValue
+                $nextHeartbeatAt = [datetime]::MinValue
+                $lastRun = @{}
+                continue
+            }
             Write-NknLog "WARN" "Spec-hämtning misslyckades: $_"
         }
     }
@@ -527,10 +544,19 @@ while ($true) {
             if ($hbResp -and $hbResp.PSObject.Properties["next_heartbeat_in_seconds"]) {
                 $heartbeatIntervalSeconds = [int]$hbResp.next_heartbeat_in_seconds
             }
+            $nextHeartbeatAt = $now.AddSeconds($heartbeatIntervalSeconds)
         } catch {
+            if (Test-IsAuthError $_) {
+                Write-NknLog "WARN" "Heartbeat fick 401 - registrerar om"
+                $config = Register-Probe
+                $specCacheUntil = [datetime]::MinValue
+                $nextHeartbeatAt = [datetime]::MinValue
+                $lastRun = @{}
+                continue
+            }
             Write-NknLog "WARN" "Heartbeat misslyckades: $_"
+            $nextHeartbeatAt = $now.AddSeconds($heartbeatIntervalSeconds)
         }
-        $nextHeartbeatAt = $now.AddSeconds($heartbeatIntervalSeconds)
     }
 
     # Per-mått-intervall: kör bara mått som passerat sin interval_seconds.
@@ -553,7 +579,15 @@ while ($true) {
         try {
             Send-Results -Config $config -Results $results
         } catch {
-            Write-NknLog "WARN" "Inrapportering misslyckades: $_"
+            if (Test-IsAuthError $_) {
+                Write-NknLog "WARN" "Results-rapport fick 401 - registrerar om"
+                $config = Register-Probe
+                $specCacheUntil = [datetime]::MinValue
+                $nextHeartbeatAt = [datetime]::MinValue
+                $lastRun = @{}
+            } else {
+                Write-NknLog "WARN" "Inrapportering misslyckades: $_"
+            }
         }
     }
 

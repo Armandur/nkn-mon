@@ -134,6 +134,19 @@ def get_probes(request: Request, _: str = Depends(require_admin)) -> dict:
     return {"probes": request.app.state.storage.list_probes()}
 
 
+@router.post("/api/probes/sweep")
+def sweep_dead_probes(
+    request: Request,
+    older_than_hours: int = 24,
+    _: str = Depends(require_admin),
+) -> dict:
+    if older_than_hours < 1:
+        raise HTTPException(status_code=400, detail="older_than_hours måste vara >= 1")
+    deleted = request.app.state.storage.delete_dead_probes(older_than_hours)
+    logger.info("Sweep tog bort %d probes äldre än %d h", deleted, older_than_hours)
+    return {"deleted": deleted, "older_than_hours": older_than_hours}
+
+
 _ADMIN_HTML = r"""<!DOCTYPE html>
 <html lang="sv">
 <head>
@@ -293,7 +306,15 @@ _ADMIN_HTML = r"""<!DOCTYPE html>
   </div>
 
   <section class="card probes-section">
-    <h2>Registrerade probes</h2>
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+      <h2 style="margin:0;">Registrerade probes</h2>
+      <span style="flex:1;"></span>
+      <label class="hint" style="margin:0;">
+        Rensa probes äldre än
+        <input id="sweep-hours" type="number" min="1" value="24" style="width:60px; padding:2px 6px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:3px;"> h
+      </label>
+      <button class="secondary" id="sweep-btn">Rensa döda</button>
+    </div>
     <table class="probes">
       <thead>
         <tr>
@@ -421,6 +442,21 @@ document.addEventListener("keydown", (e) => {
     saveConfig();
   }
 });
+
+async function sweepDeadProbes() {
+  const hours = parseInt(document.getElementById("sweep-hours").value, 10) || 24;
+  if (!confirm(`Ta bort probes som inte heartbeatat på ${hours} h?`)) return;
+  const r = await fetch(`/admin/api/probes/sweep?older_than_hours=${hours}`, { method: "POST" });
+  if (r.ok) {
+    const j = await r.json();
+    setStatus(`Rensade ${j.deleted} probes (>${j.older_than_hours} h)`, "success");
+    refreshProbes();
+    refreshStatus();
+  } else {
+    setStatus("Sweep-fel: " + (await r.text()), "error");
+  }
+}
+document.getElementById("sweep-btn").addEventListener("click", sweepDeadProbes);
 
 loadConfig();
 refreshProbes();

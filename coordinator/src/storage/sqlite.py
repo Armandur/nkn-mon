@@ -12,7 +12,7 @@ import sqlite3
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator
 
@@ -168,6 +168,26 @@ class Storage:
                 "version, created_at FROM probes ORDER BY created_at DESC"
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def delete_dead_probes(self, older_than_hours: int) -> int:
+        """Ta bort probes som inte heartbeatat på X timmar.
+
+        Probes som aldrig fått en heartbeat tas bort om de skapades för
+        mer än X timmar sedan (typiskt re-registrerade och övergivna).
+        """
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=older_than_hours)).isoformat()
+        with self._lock, self._connect() as conn:
+            cur1 = conn.execute(
+                "DELETE FROM probes WHERE last_heartbeat_at IS NOT NULL "
+                "AND last_heartbeat_at < ?",
+                (cutoff,),
+            )
+            cur2 = conn.execute(
+                "DELETE FROM probes WHERE last_heartbeat_at IS NULL AND created_at < ?",
+                (cutoff,),
+            )
+            conn.commit()
+            return cur1.rowcount + cur2.rowcount
 
 
 def open_storage() -> Storage:
