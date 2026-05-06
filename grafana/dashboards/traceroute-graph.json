@@ -80,12 +80,13 @@
             {"selector": "site", "text": "__text", "type": "string"}
           ]
         },
-        "refresh": 2,
+        "refresh": 1,
         "includeAll": true,
         "multi": true,
         "allValue": "",
         "current": {"selected": false, "text": "All", "value": "$__all"},
-        "sort": 1
+        "sort": 1,
+        "options": []
       }
     ]
   },
@@ -93,5 +94,5 @@
   "timezone": "browser",
   "title": "NKN-Monitor – traceroute-graf",
   "uid": "nkn-traceroute-graph",
-  "version": 3
+  "version": 4
 }
