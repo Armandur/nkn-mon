@@ -155,7 +155,9 @@ nästa heartbeat:
 4. Original-skriptet sparas som `.old` för manuell rollback
 5. Vid nästa körning (Scheduled Task eller manuell) kör nya versionen
 
-Endpoints (kräver bearer-token):
+Endpoints (publika):
+- `GET /client` – kort bootstrap-URL, t.ex.
+  `irm https://nkn-api.exempel.se/client -OutFile NknMonitor.ps1`
 - `GET /probe/client/version` – metadata om senaste klientversion
 - `GET /probe/client/download` – binär nedladdning med
   `X-Client-Version` + `X-Client-SHA256`-headers

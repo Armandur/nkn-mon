@@ -105,9 +105,11 @@ container-env så absoluta länkar och OAuth-callbacks (om aktivt) blir rätt.
 
 ## Klient-anslutning
 
-PowerShell-klienter pekas mot publika coordinator-URL:en:
+PowerShell-klienter pekas mot publika coordinator-URL:en. Bootstrap för
+en ny klient:
 
 ```powershell
+irm https://nkn-api.exempel.se/client -OutFile NknMonitor.ps1
 .\NknMonitor.ps1 -CoordinatorUrl https://nkn-api.exempel.se -RegistrationKey "..."
 ```
 
@@ -152,10 +154,17 @@ nästa heartbeat:
 5. Klienten exit:ar efter ersättning. Med Scheduled Task som har
    "Restart on failure" startar den automatiskt.
 
-Endpoints (kräver bearer-token):
+Endpoints:
 
-- `GET /probe/client/version` – metadata
-- `GET /probe/client/download` – binär PowerShell-fil
+- `GET /client` – publik bootstrap-URL för nya klienter (alias:
+  `GET /client/NknMonitor.ps1`). Använd t.ex.
+  `irm https://nkn-api.exempel.se/client -OutFile NknMonitor.ps1`.
+- `GET /probe/client/version` – metadata (version + sha256). Publik.
+- `GET /probe/client/download` – binär PowerShell-fil. Publik.
+
+Skriptet ligger ändå i ett publikt repo, så endpoints är öppna även utan
+bearer-token. Auto-uppdatering över heartbeat fungerar då utan att en
+trasig token blockerar uppgraderingen.
 
 ## Säkerhet
 

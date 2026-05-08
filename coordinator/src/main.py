@@ -398,6 +398,22 @@ async def get_client_version(request: Request) -> dict:
 @app.get("/probe/client/download")
 async def download_client(request: Request):
     """Returnera senaste klient-skript som en binär nedladdning. Publik."""
+    return _serve_client_script(request)
+
+
+@app.get("/client")
+@app.get("/client/NknMonitor.ps1")
+async def public_client_download(request: Request):
+    """Bekväm publik URL för bootstrap av nya klienter.
+
+    Tanken är att man ska kunna hämta senaste skriptet via t.ex.
+    `irm https://nkn-api.exempel.se/client -OutFile NknMonitor.ps1`
+    utan att först behöva en bearer-token.
+    """
+    return _serve_client_script(request)
+
+
+def _serve_client_script(request: Request):
     from fastapi.responses import Response
     info: ClientInfo = request.app.state.client_info
     if not info.version or not info.sha256:
