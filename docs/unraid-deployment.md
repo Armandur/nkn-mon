@@ -159,8 +159,13 @@ Endpoints:
 - `GET /client` – publik bootstrap-URL för nya klienter (alias:
   `GET /client/NknMonitor.ps1`). Använd t.ex.
   `irm https://nkn-api.exempel.se/client -OutFile NknMonitor.ps1`.
+  Servern bakar in den URL som hämtningen gjordes mot som default för
+  `-CoordinatorUrl`, så skriptet kan köras utan parametrar efter
+  bootstrap.
 - `GET /probe/client/version` – metadata (version + sha256). Publik.
-- `GET /probe/client/download` – binär PowerShell-fil. Publik.
+- `GET /probe/client/download` – kanoniska bytes (utan URL-injektion).
+  Används av Update-Self vid auto-uppdatering så SHA-256 matchar det
+  som heartbeat-svaret annonserar.
 
 Skriptet ligger ändå i ett publikt repo, så endpoints är öppna även utan
 bearer-token. Auto-uppdatering över heartbeat fungerar då utan att en

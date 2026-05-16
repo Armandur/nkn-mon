@@ -1,5 +1,5 @@
 ﻿<#
-# Version: 0.6.3
+# Version: 0.6.4
 .SYNOPSIS
     NKN-Monitor probe-klient (PowerShell).
 
@@ -92,7 +92,7 @@ try { Add-Type -AssemblyName "System.Security" -ErrorAction SilentlyContinue } c
 
 $BufferPath = Join-Path (Split-Path -Parent $ConfigPath) "buffer.jsonl"
 $BufferRetentionDays = 7
-$Script:NknClientVersion = "0.6.3"
+$Script:NknClientVersion = "0.6.4"
 
 # Cache av primär lokal IPv4. Uppdateras vid varje heartbeat.
 $Global:NknPrimaryLocalIp = $null
@@ -818,6 +818,15 @@ $psVer = "$($PSVersionTable.PSVersion.Major).$($PSVersionTable.PSVersion.Minor)"
 Write-NknLog "INFO" "NKN-Monitor klient v$Script:NknClientVersion startad på $env:COMPUTERNAME (PowerShell $psVer, PID $PID)"
 
 $config = Read-LocalConfig
+# Prioritera config.json över param-default när varken -CoordinatorUrl eller
+# env-variabel angetts. Säkerställer att en auto-uppdaterad klient som tappar
+# bootstrap-default (injicerad av servern vid hämtning från /client) ändå
+# fortsätter att registrera mot rätt coordinator.
+if (-not $PSBoundParameters.ContainsKey('CoordinatorUrl') -and -not $env:NKN_COORDINATOR_URL `
+    -and $config -and $config.coordinator_url) {
+    $CoordinatorUrl = ([string]$config.coordinator_url).TrimEnd("/")
+    Write-NknLog "INFO" "Använder coordinator_url från config.json: $CoordinatorUrl"
+}
 if (-not $config -or -not $config.client_token -or $config.coordinator_url -ne $CoordinatorUrl) {
     $config = Register-Probe
 } elseif ($config.client_token -and -not $config.client_token.StartsWith("dpapi:")) {

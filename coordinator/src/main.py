@@ -397,7 +397,12 @@ async def get_client_version(request: Request) -> dict:
 
 @app.get("/probe/client/download")
 async def download_client(request: Request):
-    """Returnera senaste klient-skript som en binär nedladdning. Publik."""
+    """Returnera kanoniskt klient-skript som en binär nedladdning. Publik.
+
+    Används av Update-Self i klienten - SHA-256 måste matcha det som
+    annonseras i heartbeat-svaret, så denna route levererar oförändrade
+    bytes. För bootstrap där default-URL ska bakas in, använd /client.
+    """
     return _serve_client_script(request)
 
 
@@ -408,26 +413,54 @@ async def public_client_download(request: Request):
 
     Tanken är att man ska kunna hämta senaste skriptet via t.ex.
     `irm https://nkn-api.exempel.se/client -OutFile NknMonitor.ps1`
-    utan att först behöva en bearer-token.
+    utan att först behöva en bearer-token. Default-värdet för
+    `-CoordinatorUrl` injiceras till URL:en som hämtningen gjordes mot
+    så skriptet kan köras utan parametrar.
     """
-    return _serve_client_script(request)
+    return _serve_client_script(request, bootstrap_url=_request_origin(request))
 
 
-def _serve_client_script(request: Request):
+def _request_origin(request: Request) -> str:
+    """Härled scheme + host från request, med hänsyn till proxy-headers."""
+    base = str(request.base_url).rstrip("/")
+    return base
+
+
+def _serve_client_script(request: Request, bootstrap_url: str | None = None):
     from fastapi.responses import Response
     info: ClientInfo = request.app.state.client_info
     if not info.version or not info.sha256:
         raise HTTPException(status_code=404, detail="Ingen klient distribueras härifrån")
     data = info.read_bytes()
+    sha256 = info.sha256
+    if bootstrap_url:
+        data = _inject_default_coordinator_url(data, bootstrap_url)
+        import hashlib
+        sha256 = hashlib.sha256(data).hexdigest()
     return Response(
         content=data,
         media_type="text/plain; charset=utf-8",
         headers={
             "X-Client-Version": info.version,
-            "X-Client-SHA256": info.sha256,
+            "X-Client-SHA256": sha256,
             "Content-Disposition": 'attachment; filename="NknMonitor.ps1"',
         },
     )
+
+
+def _inject_default_coordinator_url(data: bytes, url: str) -> bytes:
+    """Ersätt default-värdet för -CoordinatorUrl i param-blocket.
+
+    Letar efter literalen `"http://localhost:8200"` i fallback-kedjan
+    `else { "http://localhost:8200" }`. Om den inte hittas (t.ex. äldre
+    eller modifierat skript) returneras data oförändrat.
+    """
+    needle = b'else { "http://localhost:8200" }'
+    safe_url = url.replace('"', "").replace("\\", "")
+    replacement = f'else {{ "{safe_url}" }}'.encode("utf-8")
+    if needle not in data:
+        return data
+    return data.replace(needle, replacement, 1)
 
 
 @app.post("/probe/results", response_model=ResultsResponse)

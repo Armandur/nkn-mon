@@ -87,3 +87,5 @@ Levande lista över vad som behöver göras härnäst. Färdiga iterationer doku
 - [x] ~~Sweep-knappens bekräftelse-toast~~
 - [x] ~~Snyggare ålders-format för traceroute-historik (samma som probes-tabellen)~~
 - [x] ~~"Öppna Grafana"-länk i admin-UI:ts header~~
+- [x] ~~Publik bootstrap-URL `/client` (injicerar request-origin som default CoordinatorUrl)~~
+- [x] ~~Klienten prioriterar `config.json:coordinator_url` över param-default vid uppstart~~
